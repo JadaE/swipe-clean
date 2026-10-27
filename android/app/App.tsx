@@ -1,11 +1,11 @@
 // Swipe Clean v0.01: sort your phone's photos and videos yourself, one swipe at a time.
 // The app never decides, suggests or pre-selects anything. Removal only happens through Android's own confirmation dialog.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Modal, FlatList, AppState, Vibration, Linking, Alert, BackHandler, ActivityIndicator, Switch } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, Modal, FlatList, AppState, Vibration, Linking, Alert, BackHandler, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { C, G } from './src/theme';
+import { C, G, onTheme, applyTheme, resolveTheme, themeName } from './src/theme';
 import { Ring, Btn, Card, T, Thumb, Bar } from './src/ui';
 import { SwipeCard, CardHandle } from './src/SwipeCard';
 import * as L from './src/logic';
@@ -22,7 +22,7 @@ type Screen = { name: 'welcome' } | { name: 'access' } | { name: 'home' } | { na
 const BATCH = 250;
 
 export default function App() {
-  return <SafeAreaProvider><StatusBar style="light" /><Main /></SafeAreaProvider>;
+  return <SafeAreaProvider><Main /></SafeAreaProvider>;
 }
 
 function Main() {
@@ -71,6 +71,9 @@ function Main() {
   const byId = useMemo(() => new Map(live.map(m => [m.id, m])), [live]);
   const decks = useMemo(() => L.buildDecks(live), [live]);
 
+  // Appearance: Dark (default) / Light / Match my phone. Applied before anything below renders.
+  const phone = useColorScheme();
+  applyTheme(resolveTheme(saved?.settings.theme, phone));
   if (!saved) return <View style={st.fill} />;
   const S = saved;
   const today = S.days[L.dayKey(Date.now())] || { date: '', activeMs: 0, decided: 0, trashedBytes: 0, deletedBytes: 0 };
@@ -109,7 +112,7 @@ function Main() {
           for (const id of ids) { removed[id] = { ...removed[id], restored: true }; delete decisions[id]; } return { ...s, removed, decisions }; }); loadMedia(); }} />;
       case 'settings': return <SettingsScreen S={S} update={update} setUpdate={setUpdate} onBack={() => setScreen({ name: 'home' })} commit={commit} say={say}
         onClear={async () => { await Store.clearAll(); const s = await Store.load(); setSaved({ ...s, settings: { ...s.settings, seenWelcome: true } }); setScreen({ name: 'home' }); say('Cleared. Nothing is saved on this phone now.'); }} />;
-      case 'about': return <About onBack={() => setScreen({ name: 'home' })} />;
+      case 'about': return <About S={S} onBack={() => setScreen({ name: 'home' })} />;
       case 'stats': return <StatsScreen S={S} storage={storage} say={say} onBack={() => setScreen({ name: 'home' })} />;
       case 'months': return <MonthsScreen live={live} S={S} commit={commit} go={setScreen} onBack={() => setScreen({ name: 'home' })} />;
       case 'compare': return <CompareScreen live={live} S={S} onDecide={(id, d) => decide(id, d, 'compare')} onUndo={undo} onBack={() => setScreen({ name: 'home' })} />;
@@ -120,6 +123,7 @@ function Main() {
   })();
   return (
     <SafeAreaView style={st.fill} edges={['top', 'bottom']} onTouchStart={() => mascotBus.poke()}>
+      <StatusBar style={themeName() === 'light' ? 'dark' : 'light'} />
       {body}
       {toast ? <View style={st.toast} pointerEvents="none"><Text style={{ color: C.ink, fontSize: 14 }}>{toast}</Text></View> : null}
     </SafeAreaView>
@@ -127,13 +131,36 @@ function Main() {
 }
 
 /* ---------------- screens ---------------- */
-/** Lil Guy, if shown in Settings. peek = peeking up from the header on the calmer screens. */
-function Lil({ S, size, peek }: { S: Store.Saved; size: number; peek?: boolean }) {
-  return S.settings.lilOn ? <Mascot size={size} peek={peek} calm={S.settings.lilCalm} /> : null;
+/**
+ * The same top bar on every page: [left side] [Lil, centred] [right side]. Both sides get equal flex so Lil stays in the
+ * middle; with Show Lil off the sides simply meet in the middle. Headroom above Lil (LIL_HEAD) leaves space for the bounce,
+ * hops, spins and floating hearts, so guy is never clipped (the status bar is already handled by the SafeAreaView).
+ */
+const LIL_SIZE = 56, LIL_HEAD = 24;
+function TopBar({ S, left, right, style }: { S: Store.Saved; left?: React.ReactNode; right?: React.ReactNode; style?: any }) {
+  const on = S.settings.lilOn;
+  return (
+    <View style={[st.topBar, { paddingTop: on ? LIL_HEAD : 10 }, style]} testID="topbar">
+      <View style={[st.row, { flex: 1, minWidth: 0 }]}>{left}</View>
+      {on ? <View style={{ width: LIL_SIZE + 16, alignItems: 'center' }}><Mascot size={LIL_SIZE} calm={S.settings.lilCalm} outline={themeName() === 'light' ? 'rgba(30,27,58,0.28)' : undefined} /></View> : <View style={{ width: 12 }} />}
+      <View style={[st.row, { flex: 1, minWidth: 0, justifyContent: 'flex-end' }]}>{right}</View>
+    </View>);
+}
+/** Small stat block in the top bar: a label on top, the value under it. */
+function Stat({ label, value, align = 'left', testID }: { label: string; value: string; align?: 'left' | 'right'; testID?: string }) {
+  return (
+    <View style={{ marginHorizontal: 6, alignItems: align === 'left' ? 'flex-start' : 'flex-end', flexShrink: 1 }} testID={testID}>
+      <Text style={st.statLabel} numberOfLines={1}>{label}</Text><Text style={st.statValue} numberOfLines={1}>{value}</Text>
+    </View>);
+}
+const Back = ({ onPress }: { onPress: () => void }) => <Pressable onPress={onPress} style={[st.chip, { marginLeft: 0 }]} testID="back" accessibilityLabel="Back"><Text style={T.b}>‹</Text></Pressable>;
+/** Page title under the top bar. */
+function Heading({ title, sub }: { title: string; sub?: string }) {
+  return <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 }}><Text style={T.h2}>{title}</Text>{sub ? <Text style={T.s}>{sub}</Text> : null}</View>;
 }
 function BackupNotice({ compact }: { compact?: boolean }) {
   return (
-    <Card style={{ borderWidth: 1, borderColor: '#4a4226', backgroundColor: '#1f1d16' }}>
+    <Card style={{ borderWidth: 1, borderColor: C.warnLine, backgroundColor: C.warnBg }}>
       <Text style={[T.h2, { color: C.warn, fontSize: compact ? 16 : 19 }]}>Before you remove anything</Text>
       <Text style={[T.b, { marginTop: 6 }]}>Removing a photo or video here takes it off <Text style={{ fontWeight: '700' }}>this phone</Text>. It does not touch the copy in Google Photos.</Text>
       <Text style={[T.b, { marginTop: 6 }]}>This app <Text style={{ fontWeight: '700' }}>can’t tell</Text> whether an item has been backed up. Android doesn’t share that with other apps. Before removing, open <Text style={{ fontWeight: '700' }}>Google Photos → your profile picture → Backup</Text> and check it says <Text style={{ fontWeight: '700' }}>Backup complete</Text>.</Text>
@@ -164,7 +191,7 @@ function AccessScreen({ onAsk }: { onAsk: () => void }) {
   );
 }
 function GradCard({ children, colors = G.ring, style }: { children: React.ReactNode; colors?: readonly [string, string, ...string[]]; style?: any }) {
-  return <LinearGradient colors={colors as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[{ borderRadius: 20, padding: 16, marginVertical: 6, borderWidth: 1, borderColor: '#343a66' }, style]}>{children}</LinearGradient>;
+  return <LinearGradient colors={colors as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[{ borderRadius: 20, padding: 16, marginVertical: 6, borderWidth: 1, borderColor: C.gradLine }, style]}>{children}</LinearGradient>;
 }
 function Home(p: { otd: { offset: number; setOffset: (n: number) => void; week: boolean; setWeek: (b: boolean) => void }; more: { open: boolean; setOpen: (b: boolean) => void };
   S: Store.Saved; live: L.Media[]; decks: L.Deck[]; byId: Map<string, L.Media>; today: L.DayLog; storage: { total: number; free: number } | null; trash: { supported: boolean; bytes: number; count: number } | null;
@@ -182,20 +209,21 @@ function Home(p: { otd: { offset: number; setOffset: (n: number) => void; week: 
   const later = p.live.filter(m => S.decisions[m.id] === 'later');
   const sections: [string, L.Deck['group']][] = [['Sort', 'main'], ['Moments', 'moments'], ['By kind', 'kinds'], ['Folders', 'folders']];
   return (
-    <ScrollView contentContainerStyle={st.pad}>
-      <View style={st.row}><Text style={[T.h1, { color: C.ink }]}>Swipe <Text style={{ color: C.acc }}>Clean</Text></Text><View style={{ marginLeft: 8, alignSelf: 'flex-end' }}><Lil S={S} size={46} peek /></View><View style={{ flex: 1 }} />
-        <Pressable onPress={() => p.go({ name: 'settings' })} style={st.chip}><Text style={T.m}>⚙︎</Text></Pressable>
-        <Pressable onPress={() => p.go({ name: 'about' })} style={st.chip}><Text style={T.m}>Privacy</Text></Pressable></View>
+    <View style={{ flex: 1 }}>
+    <TopBar S={S} left={<Text style={[T.h1, { color: C.ink, fontSize: 22 }]} numberOfLines={1}>Swipe <Text style={{ color: C.acc }}>Clean</Text></Text>}
+      right={<><Pressable onPress={() => p.go({ name: 'settings' })} style={st.chip} accessibilityLabel="Settings"><Text style={T.m}>⚙︎</Text></Pressable>
+        <Pressable onPress={() => p.go({ name: 'about' })} style={st.chip}><Text style={T.m}>Privacy</Text></Pressable></>} />
+    <ScrollView contentContainerStyle={[st.pad, { paddingTop: 4 }]}>
       {p.update ? <Card style={{ borderColor: C.acc, borderWidth: 1 }}><Text style={T.b}>Version {p.update.versionName} is available.</Text><Btn title="Download update" kind="pri" onPress={() => openDownload(p.update!)} /></Card> : null}
       {p.access === 'partial' ? <Card><Text style={T.b}>You’ve given access to some photos and videos only.</Text><Btn title="Choose more" onPress={p.onMoreAccess} /></Card> : null}
 
       {/* HOME DECK: On this day */}
       <GradCard colors={G.hero}>
-        <Text style={[T.s, { color: '#c9cff5', letterSpacing: 1 }]}>ON THIS DAY</Text>
+        <Text style={[T.s, { color: C.heroInk, letterSpacing: 1 }]}>ON THIS DAY</Text>
         <View style={[st.row, { marginTop: 4 }]}>
           <Pressable testID="otd-prev" onPress={() => p.otd.setOffset(p.otd.offset - (p.otd.week ? 7 : 1))} style={st.arrow}><Text style={T.h2}>‹</Text></Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}><Text style={[T.h2, { fontSize: 21 }]}>{dayTitle}</Text>
-            <Text style={[T.s, { color: '#c9cff5' }]}>{allOtd.length ? `${allOtd.length} from ${groups.length} earlier year${groups.length > 1 ? 's' : ''}` : 'Nothing from earlier years'}</Text></View>
+            <Text style={[T.s, { color: C.heroInk }]}>{allOtd.length ? `${allOtd.length} from ${groups.length} earlier year${groups.length > 1 ? 's' : ''}` : 'Nothing from earlier years'}</Text></View>
           <Pressable testID="otd-next" onPress={() => p.otd.setOffset(p.otd.offset + (p.otd.week ? 7 : 1))} style={st.arrow}><Text style={T.h2}>›</Text></Pressable>
         </View>
         <View style={[st.row, { justifyContent: 'center', marginTop: 8 }]}>
@@ -259,6 +287,7 @@ function Home(p: { otd: { offset: number; setOffset: (n: number) => void; week: 
         </View>); }) : null}
       <Text style={[T.s, { textAlign: 'center', marginTop: 16 }]}>Swipe Clean v{VERSION_NAME} · everything stays on this phone</Text>
     </ScrollView>
+    </View>
   );
 }
 
@@ -268,11 +297,10 @@ function MonthsScreen(p: { live: L.Media[]; S: Store.Saved; commit: (f: (s: Stor
   const done = ms.filter(m => m.reviewed).length;
   return (
     <View style={{ flex: 1 }}>
-      <View style={[st.row, { padding: 14 }]}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable>
-        <View style={{ flex: 1, marginLeft: 8 }}><Text style={T.h2}>Month by month</Text><Text style={T.s}>{done} of {ms.length} months reviewed</Text></View>
-        <Lil S={p.S} size={40} peek />
-        <Pressable onPress={() => p.commit(x => ({ ...x, settings: { ...x.settings, monthSort: sort === 'date' ? 'size' : 'date' } }))} style={st.chip}><Text style={T.m}>Sort: {sort === 'date' ? 'newest' : 'size'}</Text></Pressable></View>
+      <TopBar S={p.S} left={<><Back onPress={p.onBack} /><Stat label="Months" value={`${done}/${ms.length}`} /></>}
+        right={<Pressable onPress={() => p.commit(x => ({ ...x, settings: { ...x.settings, monthSort: sort === 'date' ? 'size' : 'date' } }))} style={st.chip}><Text style={T.m}>Sort: {sort === 'date' ? 'newest' : 'size'}</Text></Pressable>} />
       <View style={{ paddingHorizontal: 14 }}><Bar pct={ms.length ? done / ms.length : 0} color={C.teal} h={5} /></View>
+      <Text style={st.under}>Month by month · {done} of {ms.length} months reviewed</Text>
       <FlatList data={ms} keyExtractor={m => m.key} contentContainerStyle={{ padding: 14 }} renderItem={({ item: m }) => (
         <Pressable onPress={() => p.go({ name: 'swipe', deck: { id: 'month:' + m.key, title: m.title, subtitle: '', ids: m.items.map(i => i.id), labels: Object.fromEntries(m.items.map(i => [i.id, L.fmtShortDay(i.takenAt)])) } })}>
           <View style={[st.deck, m.reviewed && { borderLeftWidth: 3, borderLeftColor: C.keep }]}>
@@ -290,13 +318,12 @@ function CompareScreen(p: { live: L.Media[]; S: Store.Saved; onDecide: (id: stri
   const [gi, setGi] = useState(0);
   const g = open[Math.min(gi, Math.max(0, open.length - 1))];
   const Choice = ({ m, d, label, color }: { m: L.Media; d: L.Decision; label: string; color: string }) => { const on = p.S.decisions[m.id] === d; return (
-    <Pressable onPress={() => p.onDecide(m.id, d)} style={[st.cmpBtn, on && { backgroundColor: color }]}><Text style={[T.s, { color: on ? '#0e1020' : C.ink, fontWeight: on ? '700' : '400' }]}>{label}</Text></Pressable>); };
+    <Pressable onPress={() => p.onDecide(m.id, d)} style={[st.cmpBtn, on && { backgroundColor: color }]}><Text style={[T.s, { color: on ? C.onAcc : C.ink, fontWeight: on ? '700' : '400' }]}>{label}</Text></Pressable>); };
   return (
     <View style={{ flex: 1 }}>
-      <View style={[st.row, { padding: 14 }]}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable>
-        <View style={{ flex: 1, marginLeft: 8 }}><Text style={T.h2}>Compare look-alikes</Text><Text style={T.s}>{open.length} groups with undecided items · you choose for each one</Text></View>
-        <Lil S={p.S} size={38} />
-        <Pressable onPress={p.onUndo} style={st.chip}><Text style={T.m}>↶</Text></Pressable></View>
+      <TopBar S={p.S} left={<><Back onPress={p.onBack} /><Stat label="Groups" value={open.length ? `${Math.min(gi, open.length - 1) + 1}/${open.length}` : '0'} /></>}
+        right={<><Stat label="Shots" value={String(g ? g.length : 0)} align="right" /><Pressable onPress={p.onUndo} style={st.chip} accessibilityLabel="Undo"><Text style={T.m}>↶</Text></Pressable></>} />
+      <Heading title="Compare look-alikes" sub={`${open.length} groups with undecided items · you choose for each one`} />
       {!g ? <Text style={[T.m, { textAlign: 'center', marginTop: 40 }]}>No look-alike groups left to compare.</Text> : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 30 }}>
           <Text style={[T.m, { marginHorizontal: 4, marginBottom: 6 }]}>{L.fmtDay(g[0].takenAt)} · {g.length} shots within {Math.max(1, Math.round((g[g.length - 1].takenAt - g[0].takenAt) / 1000))} s</Text>
@@ -328,14 +355,11 @@ function SwipeScreen(p: { deck?: L.Deck; S: Store.Saved; byId: Map<string, L.Med
   const goal = p.S.settings.goalMin, mins = Math.floor(p.today.activeMs / 60000);
   return (
     <LinearGradient colors={G.bg as any} style={{ flex: 1, paddingHorizontal: 14 }}>
-      <View style={[st.row, { paddingVertical: 8 }]}>
-        <Pressable onPress={p.onBack} style={st.chip} testID="back"><Text style={T.b}>‹</Text></Pressable>
-        <View style={{ flex: 1, marginHorizontal: 8 }}><Text style={[T.b, { fontWeight: '700' }]} numberOfLines={1}>{p.deck.title}</Text><Text style={T.s}>{done} of {stats.total}{stats.later && !p.deck.laterDeck ? ` · ${stats.later} for later` : ''} · {mins} of {goal} min today</Text></View>
-        <Lil S={p.S} size={40} />
-        <Pressable onPress={p.onPile} style={[st.chip, { backgroundColor: '#3a2430' }]}><Text style={[T.m, { color: C.remove }]}>Pile {p.pileCount}</Text></Pressable>
-      </View>
+      <TopBar S={p.S} style={{ paddingHorizontal: 0 }} left={<><Back onPress={p.onBack} /><Stat label="Photos" value={`${done}/${stats.total}`} testID="stat-photos" /></>}
+        right={<><Stat label="Minutes" value={`${mins}/${goal}`} align="right" testID="stat-minutes" /><Pressable onPress={p.onPile} style={[st.chip, { backgroundColor: C.pileBg }]}><Text style={[T.m, { color: C.remove }]}>Pile {p.pileCount}</Text></Pressable></>} />
       <Bar pct={stats.total ? done / stats.total : 0} color={C.keep} h={4} />
-      <View style={{ flex: 1, marginVertical: 12 }}>
+      <Text style={[st.under, { paddingHorizontal: 0 }]} numberOfLines={1} testID="deck-title">{p.deck.title}{stats.later && !p.deck.laterDeck ? ` · ${stats.later} for later` : ''}</Text>
+      <View style={{ flex: 1, marginTop: 6, marginBottom: 12 }}>
         {!a ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={T.h2}>{p.deck.laterDeck ? 'Nothing waiting for later' : 'All sorted here'}</Text>
           <Text style={[T.m, { marginTop: 6, textAlign: 'center' }]}>{p.pileCount ? `${p.pileCount} items are waiting in your Remove pile. Nothing has been removed.` : 'All done for this one.'}</Text>
@@ -346,18 +370,18 @@ function SwipeScreen(p: { deck?: L.Deck; S: Store.Saved; byId: Map<string, L.Med
         {a ? <SwipeCard key={a.id} ref={ref} item={a} top soundOn={p.S.settings.soundOn} onSound={p.onSound} recent={L.isRecent(a, p.S.settings.cautionDays)} label={p.deck.labels?.[a.id]} onDecide={d => p.onDecide(a.id, d)} /> : null}
       </View>
       <View style={[st.row, { justifyContent: 'center', paddingBottom: 4 }]}>
-        <Pressable testID="btn-remove" accessibilityLabel="Add to Remove pile" disabled={!a} onPress={() => ref.current?.fling('remove')} style={[st.round, { borderColor: C.remove, backgroundColor: '#2a1d2c' }]}><Text style={{ color: C.remove, fontSize: 26 }}>✕</Text></Pressable>
+        <Pressable testID="btn-remove" accessibilityLabel="Add to Remove pile" disabled={!a} onPress={() => ref.current?.fling('remove')} style={[st.round, { borderColor: C.remove, backgroundColor: C.removeBg }]}><Text style={{ color: C.remove, fontSize: 26 }}>✕</Text></Pressable>
         <View style={{ alignItems: 'center', marginHorizontal: 14 }}>
-          <Pressable testID="btn-later" accessibilityLabel="Decide later" disabled={!a || p.deck.laterDeck} onPress={() => ref.current?.fling('later')} style={[st.round, { width: 50, height: 50, borderColor: C.later, backgroundColor: '#231f3a', opacity: p.deck.laterDeck ? 0.3 : 1 }]}><Text style={{ color: C.later, fontSize: 16 }}>⏱</Text></Pressable>
+          <Pressable testID="btn-later" accessibilityLabel="Decide later" disabled={!a || p.deck.laterDeck} onPress={() => ref.current?.fling('later')} style={[st.round, { width: 50, height: 50, borderColor: C.later, backgroundColor: C.laterBg, opacity: p.deck.laterDeck ? 0.3 : 1 }]}><Text style={{ color: C.later, fontSize: 16 }}>⏱</Text></Pressable>
           <View style={[st.row, { marginTop: 6 }]}>
             <Pressable testID="btn-undo" accessibilityLabel="Undo" onPress={p.onUndo} style={[st.round, { width: 42, height: 42, borderColor: C.line }]}><Text style={{ color: C.mut, fontSize: 18 }}>↶</Text></Pressable>
             {/* Share: opens Android's share sheet for the current item only. Not a decision; the card stays put. */}
             <Pressable testID="btn-share" accessibilityLabel="Share this item" disabled={!a} hitSlop={4}
               onPress={() => { if (a) shareItem(a).catch(e => Alert.alert('Couldn’t share', String(e?.message || e))); }}
-              style={[st.round, { width: 42, height: 42, borderColor: C.teal, backgroundColor: '#18302f', marginLeft: 8, opacity: a ? 1 : 0.3 }]}><Text style={{ color: C.teal, fontSize: 17 }}>⇪</Text></Pressable>
+              style={[st.round, { width: 42, height: 42, borderColor: C.teal, backgroundColor: C.shareBg, marginLeft: 8, opacity: a ? 1 : 0.3 }]}><Text style={{ color: C.teal, fontSize: 17 }}>⇪</Text></Pressable>
           </View>
         </View>
-        <Pressable testID="btn-keep" accessibilityLabel="Keep on phone" disabled={!a} onPress={() => ref.current?.fling('keep')} style={[st.round, { borderColor: C.keep, backgroundColor: '#1b2c2a' }]}><Text style={{ color: C.keep, fontSize: 26 }}>♥</Text></Pressable>
+        <Pressable testID="btn-keep" accessibilityLabel="Keep on phone" disabled={!a} onPress={() => ref.current?.fling('keep')} style={[st.round, { borderColor: C.keep, backgroundColor: C.keepBg }]}><Text style={{ color: C.keep, fontSize: 26 }}>♥</Text></Pressable>
       </View>
       <Text style={[T.s, { textAlign: 'center', marginBottom: 6 }]}>← Remove pile · ⏱ Decide later · ⇪ Share · Keep on phone →</Text>
     </LinearGradient>
@@ -385,9 +409,10 @@ function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number
     catch (e: any) { Alert.alert('Couldn’t export', String(e?.message || e)); }
   };
   return (
-    <ScrollView contentContainerStyle={st.pad}>
-      <View style={[st.row, { marginBottom: 6 }]}><Pressable onPress={p.onBack} style={st.chip} testID="back"><Text style={T.b}>‹</Text></Pressable>
-        <View style={{ flex: 1, marginLeft: 8 }}><Text style={T.h2}>Stats</Text><Text style={T.s}>Only counts items Android confirmed removed in its own dialog</Text></View><Lil S={p.S} size={40} peek /></View>
+    <View style={{ flex: 1 }}>
+    <TopBar S={p.S} left={<><Back onPress={p.onBack} /><Stat label="Today" value={L.fmtBytes(sm.today.bytes)} /></>} right={<Stat label="All time" value={L.fmtBytes(sm.all.bytes)} align="right" />} />
+    <Heading title="Stats" sub="Only counts items Android confirmed removed in its own dialog" />
+    <ScrollView contentContainerStyle={[st.pad, { paddingTop: 0 }]}>
       <GradCard colors={G.hero}>
         <View style={{ flex: 1 }}>
           <Text style={T.m}>All time · moved to trash or deleted</Text>
@@ -400,7 +425,7 @@ function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number
       <View style={st.row}><Tile label="Today" t={sm.today} /><Tile label="This week (from Mon)" t={sm.week} /><Tile label="This month" t={sm.month} /></View>
       <Card>
         <View style={st.row}><Text style={[T.b, { fontWeight: '700', flex: 1 }]}>Moved to trash or deleted</Text>
-          {(['day', 'week', 'month'] as const).map(k => <Pressable key={k} testID={'stats-period-' + k} onPress={() => setPeriod(k)} style={[st.chip, { marginLeft: 4, paddingHorizontal: 10, backgroundColor: period === k ? '#2b3366' : C.card2 }]}>
+          {(['day', 'week', 'month'] as const).map(k => <Pressable key={k} testID={'stats-period-' + k} onPress={() => setPeriod(k)} style={[st.chip, { marginLeft: 4, paddingHorizontal: 10, backgroundColor: period === k ? C.selBg : C.card2 }]}>
             <Text style={[T.s, { color: period === k ? C.ink : C.mut }]}>{k === 'day' ? '30 days' : k === 'week' ? 'Weekly' : 'Monthly'}</Text></Pressable>)}</View>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 120, marginTop: 12 }}>
           {bars.map(b => <View key={b.key} style={{ flex: 1, marginHorizontal: period === 'day' ? 1 : 3, height: '100%', justifyContent: 'flex-end' }}>
@@ -433,6 +458,7 @@ function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number
         <Text style={T.s}>The CSV stays on this phone unless you pick an app in the share sheet.</Text>
       </Card>
     </ScrollView>
+    </View>
   );
 }
 function PileScreen(p: { pile: L.Media[]; bytes: number; S: Store.Saved; onBack: () => void; onUndo: () => void; onKeep: (id: string) => void; onRemoved: (list: L.Media[], mode: 'trash' | 'delete') => void; onSnaps: (s: Stats.StorageSnap[]) => void }) {
@@ -461,9 +487,9 @@ function PileScreen(p: { pile: L.Media[]; bytes: number; S: Store.Saved; onBack:
   };
   return (
     <View style={{ flex: 1 }}>
-      <View style={[st.row, { padding: 14 }]}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable>
-        <View style={{ flex: 1, marginLeft: 8 }}><Text style={T.h2}>Remove pile</Text><Text style={T.s}>{p.pile.length} items · {L.fmtBytes(p.bytes)} · tap one to move it back to Keep</Text></View>
-        <Pressable onPress={p.onUndo} style={st.chip}><Text style={T.m}>↶ Undo</Text></Pressable></View>
+      <TopBar S={p.S} left={<><Back onPress={p.onBack} /><Stat label="Items" value={String(p.pile.length)} /></>}
+        right={<><Stat label="Size" value={L.fmtBytes(p.bytes)} align="right" /><Pressable onPress={p.onUndo} style={st.chip} accessibilityLabel="Undo"><Text style={T.m}>↶</Text></Pressable></>} />
+      <Heading title="Remove pile" sub="Tap one to move it back to Keep" />
       {result ? <Card style={{ marginHorizontal: 14 }}><Text style={T.b}>{result}</Text><Btn title="OK" onPress={() => setResult(null)} /></Card> : null}
       <FlatList data={p.pile} keyExtractor={m => m.id} numColumns={3} contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 120 }}
         ListEmptyComponent={<Text style={[T.m, { textAlign: 'center', marginTop: 40 }]}>Your Remove pile is empty.</Text>}
@@ -498,8 +524,10 @@ function RemovedScreen(p: { S: Store.Saved; onBack: () => void; onRestored: (ids
     if (ok.length) p.onRestored(ok); setMsg(ok.length ? `${ok.length} put back on your phone. They’re undecided again.` : 'Nothing was put back.');
   };
   return (
-    <ScrollView contentContainerStyle={st.pad}>
-      <View style={st.row}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable><Text style={[T.h2, { marginLeft: 8 }]}>Removed with Swipe Clean</Text></View>
+    <View style={{ flex: 1 }}>
+    <TopBar S={p.S} left={<><Back onPress={p.onBack} /><Stat label="Removed" value={String(list.length)} /></>} />
+    <Heading title="Removed with Swipe Clean" />
+    <ScrollView contentContainerStyle={[st.pad, { paddingTop: 0 }]}>
       <Text style={[T.m, { marginVertical: 8 }]}>Items moved to trash can be put back for about 30 days, until Android empties the trash. Permanently deleted items can’t.</Text>
       {msg ? <Card><Text style={T.b}>{msg}</Text></Card> : null}
       {trashed.length ? <Btn title={`Put back all ${trashed.length} from trash…`} onPress={() => restore(trashed)} /> : null}
@@ -507,6 +535,7 @@ function RemovedScreen(p: { S: Store.Saved; onBack: () => void; onRestored: (ids
         <View key={r.id} style={st.deck}><View style={{ flex: 1 }}><Text style={T.b} numberOfLines={1}>{r.filename}</Text><Text style={T.s}>{r.mode === 'trash' ? 'In trash' : 'Deleted'} · {L.fmtBytes(r.bytes)} · {L.fmtShortDay(r.at)}</Text></View>
           {r.mode === 'trash' ? <Pressable onPress={() => restore([r])} style={st.chip}><Text style={T.m}>Put back</Text></Pressable> : null}</View>))}
     </ScrollView>
+    </View>
   );
 }
 
@@ -518,11 +547,13 @@ function SettingsScreen(p: { S: Store.Saved; update: UpdateInfo | null; setUpdat
     catch (e: any) { p.say('Couldn’t set the reminder: ' + (e?.message || e)); }
   };
   const Opt = ({ v, cur, on, label }: { v: number; cur: number; on: (v: number) => void; label: string }) => (
-    <Pressable onPress={() => on(v)} style={[st.chip, cur === v && { backgroundColor: C.acc }]}><Text style={[T.m, cur === v && { color: '#0f1730', fontWeight: '700' }]}>{label}</Text></Pressable>);
+    <Pressable onPress={() => on(v)} style={[st.chip, cur === v && { backgroundColor: C.acc }]}><Text style={[T.m, cur === v && { color: C.onAcc, fontWeight: '700' }]}>{label}</Text></Pressable>);
   const hh = (s.remHour % 12 || 12) + ':' + String(s.remMin).padStart(2, '0') + (s.remHour >= 12 ? ' PM' : ' AM');
   return (
-    <ScrollView contentContainerStyle={st.pad}>
-      <View style={st.row}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable><Text style={[T.h2, { marginLeft: 8, flex: 1 }]}>Settings</Text><Lil S={p.S} size={40} peek /></View>
+    <View style={{ flex: 1 }}>
+    <TopBar S={p.S} left={<><Back onPress={p.onBack} /><Stat label="Goal" value={`${s.goalMin} min`} /></>} right={<Stat label="Version" value={VERSION_NAME} align="right" />} />
+    <Heading title="Settings" />
+    <ScrollView contentContainerStyle={[st.pad, { paddingTop: 0 }]}>
       <Card><Text style={T.b}>Daily goal</Text><View style={[st.row, { flexWrap: 'wrap', marginTop: 6 }]}>{[5, 10, 15, 20, 30].map(v => <Opt key={v} v={v} cur={s.goalMin} on={v => { set({ goalMin: v }); if (s.reminder) applyReminder(true, s.remHour, s.remMin, v); }} label={v + ' min'} />)}</View>
         <Text style={[T.s, { marginTop: 6 }]}>Counts active sorting time. Breaks longer than a minute don’t count.</Text></Card>
       <Card><View style={st.row}><Text style={[T.b, { flex: 1 }]}>Daily reminder</Text><Switch value={s.reminder} onValueChange={v => applyReminder(v)} /></View>
@@ -531,6 +562,11 @@ function SettingsScreen(p: { S: Store.Saved; update: UpdateInfo | null; setUpdat
           <Pressable style={st.chip} onPress={() => applyReminder(s.reminder, (s.remHour + 23) % 24, s.remMin)}><Text style={T.b}>− h</Text></Pressable>
           <Pressable style={st.chip} onPress={() => applyReminder(s.reminder, (s.remHour + 1) % 24, s.remMin)}><Text style={T.b}>+ h</Text></Pressable>
           <Pressable style={st.chip} onPress={() => applyReminder(s.reminder, s.remHour, (s.remMin + 15) % 60)}><Text style={T.b}>+15m</Text></Pressable></View></Card>
+      <Card><Text style={T.b}>Appearance</Text>
+        <View style={[st.row, { flexWrap: 'wrap', marginTop: 6 }]}>{([['dark', 'Dark'], ['light', 'Light'], ['system', 'Match my phone']] as const).map(([v, label]) =>
+          <Pressable key={v} testID={'theme-' + v} accessibilityRole="radio" accessibilityState={{ selected: s.theme === v }} onPress={() => set({ theme: v })} style={[st.chip, { marginLeft: 0, marginRight: 6 }, s.theme === v && { backgroundColor: C.acc }]}>
+            <Text style={[T.m, s.theme === v && { color: C.onAcc, fontWeight: '700' }]}>{label}</Text></Pressable>)}</View>
+        <Text style={T.s}>Dark is the default. Light uses a warm cream background. Photos and videos always open on a dark background.</Text></Card>
       <Card><Text style={T.b}>Lil Guy</Text>
         <Text style={T.s}>Lil is the little buddy at the top of the screen. Lil is cheering you on and is just as happy whatever you pick. Give guy a tap to say hi.</Text>
         <View style={[st.row, { marginTop: 6 }]}><Text style={[T.b, { flex: 1 }]}>Show Lil</Text><Switch testID="lil-on" value={s.lilOn} onValueChange={v => set({ lilOn: v })} /></View>
@@ -545,33 +581,43 @@ function SettingsScreen(p: { S: Store.Saved; update: UpdateInfo | null; setUpdat
         {p.update ? <Btn kind="pri" title={'Download ' + p.update.versionName} onPress={() => openDownload(p.update!)} /> : null}</Card>
       <Btn kind="danger" title="Clear my data on this phone" onPress={() => Alert.alert('Clear your data?', 'This forgets your keep/remove choices, pile, history and stats. Your photos and videos are not touched.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear', style: 'destructive', onPress: p.onClear }])} />
     </ScrollView>
+    </View>
   );
 }
-function About({ onBack }: { onBack: () => void }) {
+function About({ S, onBack }: { S: Store.Saved; onBack: () => void }) {
   return (
-    <ScrollView contentContainerStyle={st.pad}>
-      <View style={st.row}><Pressable onPress={onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable><Text style={[T.h2, { marginLeft: 8 }]}>About & privacy</Text></View>
+    <View style={{ flex: 1 }}>
+    <TopBar S={S} left={<Back onPress={onBack} />} right={<Stat label="Version" value={VERSION_NAME} align="right" />} />
+    <Heading title="About & privacy" />
+    <ScrollView contentContainerStyle={[st.pad, { paddingTop: 0 }]}>
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>You decide everything.</Text> Every photo and video starts undecided. The app never suggests, flags or pre-selects anything. Decks are just different ways to sort and group.</Text></Card>
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Nothing leaves your phone.</Text> Photos and videos are read from the phone itself and never uploaded. ⇪ Share opens Android’s share sheet for one item, and it goes only where you send it. The only internet use is a once-a-day check of a small version file on the app’s own download page, to tell you when there’s an update.</Text></Card>
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Removing is always your call.</Text> The app can only ask Android to remove items. Android shows its own confirmation, and nothing happens unless you tap Allow. “Move to trash” can be undone for about 30 days.</Text></Card>
       <BackupNotice />
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>What’s saved:</Text> your keep/remove choices, the pile, removal history and daily stats, only on this phone. “Clear my data” in Settings erases them.</Text></Card>
     </ScrollView>
+    </View>
   );
 }
 
-const st = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: C.bg }, pad: { padding: 16, paddingBottom: 40 }, row: { flexDirection: 'row', alignItems: 'center' },
+/** Screen styles, rebuilt when the theme changes. */
+const mkSt = () => StyleSheet.create({
+  fill: { flex: 1, backgroundColor: C.bg },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingBottom: 8, zIndex: 10 },
+  statLabel: { color: C.dim, fontSize: 11, letterSpacing: 0.3 }, statValue: { color: C.ink, fontSize: 16, fontWeight: '700' },
+  under: { color: C.dim, fontSize: 12, textAlign: 'center', paddingHorizontal: 14, paddingTop: 6 }, pad: { padding: 16, paddingBottom: 40 }, row: { flexDirection: 'row', alignItems: 'center' },
   chip: { backgroundColor: C.card2, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, marginLeft: 6, marginVertical: 3 },
   deck: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 14, padding: 14, marginVertical: 4 },
   round: { width: 68, height: 68, borderRadius: 34, borderWidth: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: C.card },
   toast: { position: 'absolute', bottom: 30, left: 20, right: 20, backgroundColor: C.card2, padding: 12, borderRadius: 14, alignItems: 'center' },
-  footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 14, backgroundColor: 'rgba(15,17,21,0.95)' },
-  sheetWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
-  arrow: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
-  seg: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 3 }, segOn: { backgroundColor: C.acc }, segTxt: { color: '#0e1020', fontWeight: '700' },
-  yearRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(14,16,32,0.45)', borderRadius: 14, padding: 10, marginTop: 8 },
+  footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 14, backgroundColor: C.footerBg },
+  sheetWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: C.scrim },
+  arrow: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.softBg, alignItems: 'center', justifyContent: 'center' },
+  seg: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: C.softBg, marginHorizontal: 3 }, segOn: { backgroundColor: C.acc }, segTxt: { color: C.onAcc, fontWeight: '700' },
+  yearRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.rowBg, borderRadius: 14, padding: 10, marginTop: 8 },
   mini: { width: 44, height: 44, borderRadius: 8, marginRight: 4 },
   cmpBtn: { flex: 1, paddingVertical: 7, borderRadius: 10, backgroundColor: C.card2, alignItems: 'center', marginHorizontal: 2 },
   sheet: { backgroundColor: C.bg, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, maxHeight: '90%' },
 });
+let st = mkSt();
+onTheme(() => { st = mkSt(); });

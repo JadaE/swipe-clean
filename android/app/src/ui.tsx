@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, Image, StyleSheet, ViewStyle } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { C } from './theme';
+import { C, onTheme } from './theme';
 import { thumb } from './media';
 
 /** Calm progress ring. */
@@ -19,8 +19,8 @@ export function Ring({ pct, size = 120, stroke = 10, color = C.keep, children }:
   );
 }
 export function Btn({ title, onPress, kind = 'plain', disabled, style, testID }: { title: string; onPress: () => void; kind?: 'plain' | 'pri' | 'danger' | 'ghost'; disabled?: boolean; style?: ViewStyle; testID?: string }) {
-  const bg = kind === 'pri' ? C.acc : kind === 'danger' ? '#3a1f25' : kind === 'ghost' ? 'transparent' : C.card2;
-  const fg = kind === 'pri' ? '#0f1730' : kind === 'danger' ? '#ffb8c2' : C.ink;
+  const bg = kind === 'pri' ? C.acc : kind === 'danger' ? C.dangerBg : kind === 'ghost' ? 'transparent' : C.card2;
+  const fg = kind === 'pri' ? C.onAcc : kind === 'danger' ? C.dangerInk : C.ink;
   return (
     <Pressable testID={testID} accessibilityRole="button" disabled={disabled} onPress={onPress}
       style={({ pressed }) => [{ backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.8 : 1, paddingVertical: 14, paddingHorizontal: 16, borderRadius: 14, alignItems: 'center', marginVertical: 5, borderWidth: kind === 'ghost' ? 1 : 0, borderColor: C.line }, style]}>
@@ -29,15 +29,18 @@ export function Btn({ title, onPress, kind = 'plain', disabled, style, testID }:
   );
 }
 export const Card = ({ children, style }: { children: React.ReactNode; style?: ViewStyle }) => <View style={[{ backgroundColor: C.card, borderRadius: 18, padding: 16, marginVertical: 6 }, style]}>{children}</View>;
-export const T = {
+const mkT = () => ({
   h1: { color: C.ink, fontSize: 26, fontWeight: '800' as const }, h2: { color: C.ink, fontSize: 19, fontWeight: '700' as const },
   b: { color: C.ink, fontSize: 15, lineHeight: 21 }, m: { color: C.mut, fontSize: 13, lineHeight: 18 }, s: { color: C.dim, fontSize: 12 },
-};
+});
+/** Text styles. Rebuilt when the theme changes (importers read the live binding at render time). */
+export let T = mkT();
+onTheme(() => { T = mkT(); });
 export function Thumb({ uri, size = 360, style, badge }: { uri: string; size?: number; style?: any; badge?: string }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => { let on = true; thumb(uri, size).then(u => on && setSrc(u)); return () => { on = false; }; }, [uri, size]);
   return (
-    <View style={[{ backgroundColor: '#0a0b0e', overflow: 'hidden' }, style]}>
+    <View style={[{ backgroundColor: C.thumbBg, overflow: 'hidden' }, style]}>
       {src ? <Image source={{ uri: src }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : null}
       {badge ? <Text style={{ position: 'absolute', right: 4, bottom: 4, color: '#fff', backgroundColor: 'rgba(0,0,0,.6)', fontSize: 10, paddingHorizontal: 5, borderRadius: 6 }}>{badge}</Text> : null}
     </View>

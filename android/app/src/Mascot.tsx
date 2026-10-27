@@ -12,6 +12,7 @@ const SPRITES = {
 };
 type Sprite = keyof typeof SPRITES;
 const KEYS = Object.keys(SPRITES) as Sprite[];
+const OUTLINE = [[-1, 0], [1, 0], [0, -1], [0, 1.2]] as const; // 1dp keyline, a touch heavier below like a shadow
 const HEART = require('../assets/lil/heart.png'), SPARKLE = require('../assets/lil/sparkle.png');
 
 /** System "Remove animations" / reduce motion. */
@@ -29,12 +30,13 @@ const ND = true; // useNativeDriver everywhere
 const tm = (v: Animated.Value, toValue: number, duration: number, easing = Easing.out(Easing.quad)) => Animated.timing(v, { toValue, duration, easing, useNativeDriver: ND });
 const sp = (v: Animated.Value, toValue: number, friction = 4, tension = 120) => Animated.spring(v, { toValue, friction, tension, useNativeDriver: ND });
 
-type Props = { size?: number; peek?: boolean; calm?: boolean; testID?: string };
+type Props = { size?: number; calm?: boolean; testID?: string; outline?: string };
 /**
- * size: dp. peek: Lil peeks up from behind the header edge (other screens). calm: still except tiny reactions.
+ * outline: a soft keyline colour drawn behind Lil (used on the light theme, where guy's cream edge meets a cream background).
+ * size: dp. calm: still except tiny reactions. The parent leaves ~0.43 x size of headroom above Lil for hops and hearts.
  * Reacts to mascotBus.react(action) from anywhere, and to taps. Idle poses after 8–12 s untouched (not in calm / reduce motion).
  */
-export const Mascot = memo(function Mascot({ size = 40, peek = false, calm = false, testID }: Props) {
+export const Mascot = memo(function Mascot({ size = 40, calm = false, testID, outline }: Props) {
   const reduce = useReduceMotion();
   const still = calm || reduce;
   const [sprite, setSpriteState] = useState<Sprite>('main');
@@ -60,7 +62,7 @@ export const Mascot = memo(function Mascot({ size = 40, peek = false, calm = fal
 
   const reset = () => { running.current?.stop(); ty.setValue(0); sx.setValue(1); sy.setValue(1); wig.setValue(0); spin.setValue(0); };
   const play = (a: Animated.CompositeAnimation) => { running.current = a; a.start(() => { if (running.current === a) running.current = null; }); };
-  const burst = (kind: 'hearts' | 'sparkles') => { setFx(kind); fxA.setValue(0); tm(fxA, 1, reduce ? 500 : 750, Easing.out(Easing.cubic)).start(() => setFx(f => (f === kind ? null : f))); };
+  const burst = (kind: 'hearts' | 'sparkles') => { setFx(kind); fxA.setValue(0); tm(fxA, 1, reduce ? 500 : 750, Easing.out(Easing.cubic)).start(({ finished }) => { if (finished) setFx(null); }); };   // a newer burst (spam taps) restarts it instead
 
   const react = (action: MascotAction) => {
     const r = pickReaction(action, Math.random, lastR.current); lastR.current = r;
@@ -78,7 +80,7 @@ export const Mascot = memo(function Mascot({ size = 40, peek = false, calm = fal
         Animated.parallel([tm(sx, 1.22, 110), tm(sy, 0.8, 110)]), Animated.parallel([tm(sx, 0.9, 110), tm(sy, 1.14, 110)]),
         Animated.parallel([sp(sx, 1, 3), sp(sy, 1, 3)])])); break;
       case 'wiggle': play(Animated.sequence([tm(wig, -1, 80), tm(wig, 1, 120), tm(wig, -0.7, 110), tm(wig, 0.4, 100), sp(wig, 0, 5)])); break;
-      case 'spin': play(Animated.sequence([Animated.parallel([tm(ty, -h * 0.5, 140), tm(spin, 1, 520, Easing.inOut(Easing.cubic))]), tm(ty, 0, 140, Easing.in(Easing.quad))])); later(() => spin.setValue(0), 700); break;
+      case 'spin': play(Animated.sequence([Animated.parallel([tm(ty, -h * 0.5, 140), tm(spin, 1, 520, Easing.inOut(Easing.cubic))]), tm(ty, 0, 140, Easing.in(Easing.quad))])); break;
       case 'sparkles': case 'hearts': burst(r); play(Animated.sequence([tm(ty, -h * 0.45, 140), Animated.parallel([sp(ty, 0, 4), Animated.sequence([tm(sx, 1.08, 80), sp(sx, 1)])])])); break;
     }
   };
@@ -117,12 +119,12 @@ export const Mascot = memo(function Mascot({ size = 40, peek = false, calm = fal
   const rot2 = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   const fxY = fxA.interpolate({ inputRange: [0, 1], outputRange: [0, reduce ? 0 : -size * 0.35] });
   const fxO = fxA.interpolate({ inputRange: [0, 0.2, 0.7, 1], outputRange: [0, 1, 1, 0] });
-  const peekH = Math.round(size * 0.66);
   const e = Math.round(size * 0.34);
   return (
-    <Pressable testID={testID || 'lil'} onPress={() => { mascotBus.poke(); react('tap'); }} hitSlop={6} accessibilityRole="button" accessibilityLabel={LIL_A11Y}
-      style={{ width: size, height: peek ? peekH : size, overflow: peek ? 'hidden' : 'visible' }}>
-      <Animated.View style={{ width: size, height: size, transform: [{ translateY: peek ? size - peekH : 0 }, { translateY: bobY }, { translateY: ty }, { translateY: size / 2 }, { scaleX: sx }, { scaleY: sy }, { translateY: -size / 2 }, { rotate: rot }, { rotate: rot2 }] }}>
+    <Pressable testID={testID || 'lil'} onPress={() => { mascotBus.poke(); react('tap'); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={LIL_A11Y}
+      style={{ width: size, height: size, overflow: 'visible' }}>
+      <Animated.View style={{ width: size, height: size, transform: [{ translateY: bobY }, { translateY: ty }, { translateY: size / 2 }, { scaleX: sx }, { scaleY: sy }, { translateY: -size / 2 }, { rotate: rot }, { rotate: rot2 }] }}>
+        {outline ? OUTLINE.map(([dx, dy], i) => <Image key={'o' + i} source={SPRITES[sprite]} fadeDuration={0} tintColor={outline} style={{ position: 'absolute', width: size, height: size, left: dx, top: dy }} />) : null}
         {KEYS.map(k => <Image key={k} source={SPRITES[k]} fadeDuration={0} style={{ position: 'absolute', width: size, height: size, opacity: k === sprite ? 1 : 0 }} />)}
       </Animated.View>
       {fx ? <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: size, height: size, opacity: fxO, transform: [{ translateY: fxY }] }}>
