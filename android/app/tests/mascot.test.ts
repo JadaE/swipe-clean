@@ -70,4 +70,8 @@ t('bus delivers reactions and pokes to every listener', () => {
   assert.deepEqual(got, ['keep', 'remove', 'poke']);
 });
 t('lil text uses lil/guy pronouns', () => { assert.match(M.LIL_A11Y, /Lil is/); assert.match(M.LIL_A11Y, /guy/); assert.ok(!/\b(he|him|she|her|they|them)\b/i.test(M.LIL_A11Y)); });
+t('spam taps: every tap gets a fresh, valid reaction', () => {
+  const rng = lcg(42); let last: M.Reaction | undefined;
+  for (let i = 0; i < 1000; i++) { const r = M.pickReaction('tap', rng, last); assert.ok(M.REACTIONS.includes(r)); assert.notEqual(r, last); last = r; }
+});
 console.log(`mascot: ${n} passed`);

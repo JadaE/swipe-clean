@@ -1,5 +1,6 @@
 {
   "neverPublishTo": [],
+  "herenowPublishScript": "/ABSOLUTE/PATH/TO/here-now/scripts/publish.sh",
   "web": {
     "slug": "YOUR-SITE-SLUG",
     "pathToken": "YOUR_SECRET_PATH",

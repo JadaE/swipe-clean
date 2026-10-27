@@ -2,14 +2,14 @@
   "expo": {
     "name": "Swipe Clean",
     "slug": "swipe-clean",
-    "version": "0.0.5",
+    "version": "0.0.6",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "backgroundColor": "#0f1115",
     "icon": "./assets/icon.png",
     "android": {
       "package": "com.jada.swipeclean",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundImage": "./assets/adaptive-icon-background.png",

@@ -2,7 +2,8 @@ import React, { useEffect, useImperativeHandle, useRef, useState, forwardRef } f
 import { Animated, PanResponder, View, Text, Pressable, Image, Dimensions, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { C, G } from './theme';
+// The photo/video viewer stays dark in both themes (best for media), so it always uses the dark palette.
+import { DARK as C, DARK_G as G } from './theme';
 import { thumb } from './media';
 import { Media, fmtBytes, fmtDay, fmtTime, fmtDur, fmtRes } from './logic';
 
