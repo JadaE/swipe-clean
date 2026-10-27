@@ -25,7 +25,7 @@ li{margin:4px 0}.small{font-size:12px;color:#6b7280}.grid{display:grid;grid-temp
 <a class="btn" href="$APK" download>⬇ Download for Android ($SIZE MB)</a>
 <div class="card"><b>Already have an older version?</b> Download this one and tap <b>Update</b>. It installs over it (same signing key) and keeps your choices. Don't uninstall first.</div>
 <div class="card"><b>New install (about 1 minute)</b><ol>
-<li>Open this page in <b>Chrome</b> on your phone and tap <b>Download</b>. Your phone is almost full, and the download needs about ${SIZE} MB free. If it fails, clear a few big videos first, or delete an old download.</li>
+<li>Open this page in <b>Chrome</b> on your phone and tap <b>Download</b>. The download needs about ${SIZE} MB free. If it fails, free up some space first, or delete an old download.</li>
 <li>Tap the downloaded file (from the notification, or Files → Downloads).</li>
 <li>If Android says Chrome <b>isn't allowed to install unknown apps</b>, tap <b>Settings</b> and turn on <b>Allow from this source</b>, then go back.</li>
 <li>Tap <b>Install</b>. If <b>Play Protect</b> warns about an unknown app, tap <b>More details → Install anyway</b>. That warning appears because the app isn't from the Play Store.</li>
@@ -34,7 +34,7 @@ li{margin:4px 0}.small{font-size:12px;color:#6b7280}.grid{display:grid;grid-temp
 <div class="card warn"><b>Before you remove anything:</b> removing from the phone does <b>not</b> delete the copy in Google Photos, but the app <b>can't tell</b> whether something has been backed up, because Android doesn't share that with other apps. Check first in Google Photos → your profile picture → Backup that it says <b>Backup complete</b>.</div>
 <div class="card"><b>Privacy:</b> your photos are read on the phone and never uploaded. The only internet use is a once-a-day check of a small version file on this site for updates. Removing always goes through Android's own dialog. "Move to trash" can be restored for about 30 days.</div>
 ${SHOTS:+<div class="card"><b>Screens</b><div class="grid" style="margin-top:8px">$SHOTS</div></div>}
-<p class="small">Android 11+ to remove (sorting works on Android 7+) · package com.jada.swipeclean · v$V · SHA-256 starts $SHA · built $(TZ=America/Chicago date '+%a %b %-d, %-I:%M %p CT')</p>
+<p class="small">Android 11+ to remove (sorting works on Android 7+) · package com.jada.swipeclean · v$V · SHA-256 starts $SHA · built $(TZ=UTC date '+%a %b %-d, %H:%M UTC')</p>
 </main></body></html>
 H
 printf '{"versionCode":%s,"versionName":"%s","apkUrl":"https://%s.here.now/%s/%s","notes":"%s"}\n' "$VC" "$V" "$SLUG" "$INST" "$APK" "${NOTES:-}" > $SITE/$UPD/version.json
