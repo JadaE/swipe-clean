@@ -10,16 +10,17 @@ case "$SLUG$INST$UPD" in *YOUR*|"") echo "REFUSING: config has placeholder or mi
 V=$(node -e "console.log(require('$D/app/app.json').expo.version)"); VC=$(node -e "console.log(require('$D/app/app.json').expo.android.versionCode)")
 APK=SwipeClean-v$V.apk; cp $D/dist/$APK $SITE/$INST/
 SHA=$(sha256sum $D/dist/$APK | cut -c1-16); SIZE=$(du -m $D/dist/$APK | cut -f1)
+cp $D/tools/site-icon.png $SITE/$INST/icon.png   # app icon (192 px) for the favicon and page header
 SHOTS=""; if ls $D/screens/site/*.png >/dev/null 2>&1; then mkdir -p $SITE/$INST/shots; cp $D/screens/site/*.png $SITE/$INST/shots/; for f in $SITE/$INST/shots/*.png; do n=$(basename $f); SHOTS+="<a href=\"shots/$n\"><img loading=lazy src=\"shots/$n\" alt=\"\"></a>"; done; fi
 cat > $SITE/$INST/index.html <<H
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive"><meta name="referrer" content="no-referrer"><meta property="og:title" content="Private page"><meta property="og:description" content="Nothing here">
-<title>Swipe Clean v$V</title><link rel="icon" href="data:,">
+<title>Swipe Clean v$V</title><link rel="icon" type="image/png" href="icon.png"><link rel="apple-touch-icon" href="icon.png">
 <style>body{margin:0;background:#0f1115;color:#eef0f4;font:16px/1.5 system-ui,Roboto,sans-serif}main{max-width:640px;margin:auto;padding:24px 18px}
 h1{font-size:28px;margin:4px 0}.btn{display:block;text-align:center;background:#9ab8ff;color:#0f1730;font-weight:800;font-size:18px;padding:16px;border-radius:14px;text-decoration:none;margin:18px 0}
 .card{background:#1a1d24;border-radius:16px;padding:14px 16px;margin:12px 0}.warn{background:#1f1d16;border:1px solid #4a4226}.warn b{color:#e9c46a}
 li{margin:4px 0}.small{font-size:12px;color:#6b7280}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}.grid img{width:100%;border-radius:12px}</style></head><body><main>
-<h1>Swipe Clean <span style="color:#9ab8ff">v$V</span></h1>
+<h1><img src="icon.png" alt="" width="56" height="56" style="vertical-align:middle;margin-right:10px">Swipe Clean <span style="color:#9ab8ff">v$V</span></h1>
 <p>Sort the photos and videos on your phone yourself, one swipe at a time. Swipe right to keep and left to add to your Remove pile. Nothing is removed until you review the pile and approve Android's own confirmation. The app never picks anything for you.</p>
 <a class="btn" href="$APK" download>⬇ Download for Android ($SIZE MB)</a>
 <div class="card"><b>Already have an older version?</b> Download this one and tap <b>Update</b>. It installs over it (same signing key) and keeps your choices. Don't uninstall first.</div>

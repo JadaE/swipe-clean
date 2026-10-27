@@ -13,9 +13,10 @@ AJ=$(node -e "const a=require('./app.json').expo;console.log(a.version+':'+a.and
 VT=$(node -e "const s=require('fs').readFileSync('src/version.ts','utf8');console.log(s.match(/VERSION_NAME = '([^']+)'/)[1]+':'+s.match(/VERSION_CODE = (\\d+)/)[1])")
 [ "$AJ" = "$VT" ] || { echo "Version mismatch: app.json $AJ vs src/version.ts $VT" >&2; exit 1; }
 V=${AJ%%:*}
-npx tsc --noEmit -p . && npx tsx tests/logic.test.ts | tail -1 && npx tsx tests/stats.test.ts | tail -1 && TZ=Pacific/Auckland npx tsx tests/stats.test.ts | tail -1
+npx tsc --noEmit -p . && npx tsx tests/logic.test.ts | tail -1 && npx tsx tests/stats.test.ts | tail -1 && TZ=Pacific/Auckland npx tsx tests/stats.test.ts | tail -1 && npx tsx tests/mascot.test.ts | tail -1
 [ -f "$ROOT/keys/swipeclean.keystore" ] && [ "$CFG" = "$REPO/config.local.json" ] || { echo "Checks passed. A signed APK needs the real config.local.json and android/keys/swipeclean.keystore (not in git); stopping before the release build." >&2; exit 2; }
-[ -d android ] || npx expo prebuild -p android --no-install
+# Always (re)apply app.json to the native project, so version, launcher icons and manifest follow it. Non-clean: keeps the folder.
+CI=1 npx expo prebuild -p android --no-install
 echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 G=android/app/build.gradle
 if ! grep -q "SC_RELEASE_SIGNING" $G; then
