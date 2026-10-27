@@ -26,8 +26,10 @@ if [ "${DRY_RUN:-}" = 1 ]; then
   if [ -n "$KEYVAL" ] && grep -rqF -- "$KEYVAL" "$SITE" "$APP"; then die "API key found in site files"; fi
   echo "DRY RUN OK: would refresh <pathToken>/ inside the existing site folder and upload $(find "$SITE" -type f | wc -l) files. Nothing changed or published."; exit 0
 fi
-PUB=$(ls -d /home/box/agent-data/plugins/cache/cursor-public/here_now/*/skills/here-now/scripts/publish.sh 2>/dev/null | head -1)
-[ -n "$PUB" ] || { echo "here.now publish.sh not found" >&2; exit 1; }
+# here.now publish script: $HERENOW_PUBLISH_SH, else config key herenowPublishScript (a path; a * glob is allowed)
+PUBPAT=${HERENOW_PUBLISH_SH:-$(jq -r '.herenowPublishScript//empty' "$CFG")}
+PUB=$( [ -n "$PUBPAT" ] && ls -d $PUBPAT 2>/dev/null | head -1 || true)
+[ -n "$PUB" ] || { echo "here.now publish.sh not found (set HERENOW_PUBLISH_SH or herenowPublishScript in config.local.json)" >&2; exit 1; }
 [ -n "$KEYVAL" ] || { echo "No here.now API key (HERENOW_API_KEY or ~/.herenow/credentials)" >&2; exit 1; }
 # stage: refresh only the app folder (no screens/, no tests); everything else in the site folder stays as it is
 rm -rf "${SITE:?}/$TOK"; mkdir -p "$SITE/$TOK"

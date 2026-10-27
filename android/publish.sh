@@ -26,7 +26,10 @@ STATE=$(dirname "$SITE")   # here.now keeps its local state in <cwd>/.herenow; t
 [ -d "$STATE/.herenow" ] || echo "note: no $STATE/.herenow state found (publishing with --slug still works)" >&2
 NAPK=$(ls "$SITE/$INST"/SwipeClean-v*.apk | wc -l); NFILES=$(find "$SITE" -type f | wc -l)
 if [ "${DRY_RUN:-}" = 1 ]; then echo "DRY RUN OK: would upload $NFILES files from the existing site folder ($NAPK APKs, latest staged: $APKF). Nothing published."; exit 0; fi
-PUB=$(ls -d /home/box/agent-data/plugins/cache/cursor-public/here_now/*/skills/here-now/scripts/publish.sh | head -1)
+# here.now publish script: $HERENOW_PUBLISH_SH, else config key herenowPublishScript (a path; a * glob is allowed)
+PUBPAT=${HERENOW_PUBLISH_SH:-$(jq -r '.herenowPublishScript//empty' "$CFG")}
+PUB=$( [ -n "$PUBPAT" ] && ls -d $PUBPAT 2>/dev/null | head -1 || true)
+[ -n "$PUB" ] || { echo "here.now publish.sh not found (set HERENOW_PUBLISH_SH or herenowPublishScript in config.local.json)" >&2; exit 1; }
 [ -n "${HERENOW_API_KEY:-}" ] || [ -f "$HOME/.herenow/credentials" ] || { echo "No here.now API key" >&2; exit 1; }
 cd "$STATE"
 OUT=$(bash "$PUB" "$SITE" --client cursor --slug "$SLUG" 2>&1) || { echo "$OUT" | grep -viE 'bearer|api_key|claim' >&2; echo "PUBLISH FAILED" >&2; exit 1; }
