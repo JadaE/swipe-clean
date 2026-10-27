@@ -4,9 +4,9 @@ import type { Decision, HistEntry, DayLog } from './logic';
 import type { StorageSnap } from './stats';
 
 export type Removed = { id: string; uri: string; filename: string | null; bytes: number; at: number; mode: 'trash' | 'delete'; restored?: boolean; kind?: 'photo' | 'video'; restoredAt?: number };
-export type Settings = { goalMin: number; reminder: boolean; remHour: number; remMin: number; cautionDays: number; seenWelcome: boolean; lastUpdateCheck: number; soundOn: boolean; showStreak: boolean; monthSort: 'date' | 'size' };
+export type Settings = { goalMin: number; reminder: boolean; remHour: number; remMin: number; cautionDays: number; seenWelcome: boolean; lastUpdateCheck: number; soundOn: boolean; showStreak: boolean; monthSort: 'date' | 'size'; lilOn: boolean; lilCalm: boolean };
 export type Saved = { decisions: Record<string, Decision>; history: HistEntry[]; front: string[]; days: Record<string, DayLog>; removed: Record<string, Removed>; settings: Settings; storageLog: StorageSnap[]; statsSince?: number };
-export const DEFAULT_SETTINGS: Settings = { goalMin: 15, reminder: false, remHour: 20, remMin: 0, cautionDays: 30, seenWelcome: false, lastUpdateCheck: 0, soundOn: false, showStreak: true, monthSort: 'date' };
+export const DEFAULT_SETTINGS: Settings = { goalMin: 15, reminder: false, remHour: 20, remMin: 0, cautionDays: 30, seenWelcome: false, lastUpdateCheck: 0, soundOn: false, showStreak: true, monthSort: 'date', lilOn: true, lilCalm: false };
 const KEY = 'swipeclean:v1';
 export async function load(): Promise<Saved> {
   let s: any = null; try { s = JSON.parse((await AsyncStorage.getItem(KEY)) || 'null'); } catch {}
