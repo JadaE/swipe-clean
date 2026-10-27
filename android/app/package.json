@@ -1,0 +1,28 @@
+{
+  "name": "swipeclean",
+  "version": "0.0.1",
+  "main": "index.ts",
+  "private": true,
+  "scripts": {
+    "test": "tsx tests/logic.test.ts"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~58.0.16",
+    "expo-build-properties": "~58.0.11",
+    "expo-linear-gradient": "~58.0.3",
+    "expo-notifications": "~58.1.5",
+    "expo-status-bar": "~58.0.3",
+    "expo-video": "~58.0.12",
+    "react": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-svg": "15.16.0",
+    "swipeclean-media": "file:modules/swipeclean-media"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3"
+  }
+}

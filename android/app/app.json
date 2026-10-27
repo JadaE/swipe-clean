@@ -1,0 +1,79 @@
+{
+  "expo": {
+    "name": "Swipe Clean",
+    "slug": "swipe-clean",
+    "version": "0.0.4",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0f1115",
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "com.jada.swipeclean",
+      "versionCode": 4,
+      "adaptiveIcon": {
+        "backgroundColor": "#0f1115",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.MANAGE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "com.google.android.c2dm.permission.RECEIVE",
+        "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE",
+        "com.sec.android.provider.badge.permission.READ",
+        "com.sec.android.provider.badge.permission.WRITE",
+        "com.htc.launcher.permission.READ_SETTINGS",
+        "com.htc.launcher.permission.UPDATE_SHORTCUT",
+        "com.sonyericsson.home.permission.BROADCAST_BADGE",
+        "com.sonymobile.home.permission.PROVIDER_INSERT_BADGE",
+        "com.anddoes.launcher.permission.UPDATE_COUNT",
+        "com.majeur.launcher.permission.UPDATE_BADGE",
+        "com.huawei.android.launcher.permission.CHANGE_BADGE",
+        "com.huawei.android.launcher.permission.READ_SETTINGS",
+        "com.huawei.android.launcher.permission.WRITE_SETTINGS",
+        "android.permission.READ_APP_BADGE",
+        "com.oppo.launcher.permission.READ_SETTINGS",
+        "com.oppo.launcher.permission.WRITE_SETTINGS",
+        "me.everything.badger.permission.BADGE_COUNT_READ",
+        "me.everything.badger.permission.BADGE_COUNT_WRITE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": false
+          }
+        }
+      ],
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": false,
+          "supportsPictureInPicture": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#9ab8ff"
+        }
+      ]
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "swipe-clean-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Swipe Clean web demo (static files in app/) and its headless test",
+  "scripts": {
+    "test": "node test/test.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}

@@ -1,0 +1,11 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+group = 'com.jada.swipeclean'
+version = '0.0.1'
+android {
+  namespace "expo.modules.swipecleanmedia"
+  defaultConfig { versionCode 1; versionName '0.0.1' }
+}
+dependencies { implementation 'com.facebook.react:react-android' }
