@@ -4,7 +4,9 @@
   "main": "index.ts",
   "private": true,
   "scripts": {
-    "test": "tsx tests/logic.test.ts"
+    "sync-config": "bash ../tools/sync-config.sh",
+    "typecheck": "npm run sync-config --silent && tsc --noEmit -p .",
+    "test": "npm run sync-config --silent && tsx tests/logic.test.ts && tsx tests/stats.test.ts && TZ=Pacific/Auckland tsx tests/stats.test.ts"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

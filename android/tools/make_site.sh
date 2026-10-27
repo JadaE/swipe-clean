@@ -2,8 +2,9 @@
 # Stage the install page + APK for one version under its secret path, and point the update channel at it.
 # Usage: bash tools/make_site.sh   (reads version from app/app.json)
 set -euo pipefail
-D=/workspace/photo-cleanup/android; CFG=$D/keys/site-config.json; SITE=$D/publish-site
-SLUG=$(jq -r .slug $CFG); INST=$(jq -r .install_path $CFG); UPD=$(jq -r .update_channel_path $CFG)
+D=$(cd "$(dirname "$0")/.." && pwd); CFG=$D/../config.local.json; SITE=$D/publish-site
+[ -f "$CFG" ] || { echo "make_site needs the real config.local.json (not the example)" >&2; exit 1; }
+SLUG=$(jq -r .android.slug $CFG); INST=$(jq -r .android.installPath $CFG); UPD=$(jq -r .android.updateChannelPath $CFG)
 V=$(node -e "console.log(require('$D/app/app.json').expo.version)"); VC=$(node -e "console.log(require('$D/app/app.json').expo.android.versionCode)")
 APK=SwipeClean-v$V.apk; mkdir -p $SITE/$INST $SITE/$UPD; cp $D/dist/$APK $SITE/$INST/
 SHA=$(sha256sum $D/dist/$APK | cut -c1-16); SIZE=$(du -m $D/dist/$APK | cut -f1)
