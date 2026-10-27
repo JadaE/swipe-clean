@@ -15,6 +15,8 @@ import * as Stats from './src/stats';
 import { fetchLatest, isNewer, openDownload, UpdateInfo } from './src/update';
 import { setReminder } from './src/reminder';
 import { VERSION_NAME } from './src/version';
+import { Mascot } from './src/Mascot';
+import { mascotBus } from './src/mascot';
 
 type Screen = { name: 'welcome' } | { name: 'access' } | { name: 'home' } | { name: 'swipe'; deck: L.Deck } | { name: 'months' } | { name: 'compare' } | { name: 'pile' } | { name: 'removed' } | { name: 'settings' } | { name: 'about' } | { name: 'stats' };
 const BATCH = 250;
@@ -77,7 +79,8 @@ function Main() {
   const sortedCount = live.filter(m => S.decisions[m.id]).length;
   const totals = Object.values(S.removed).filter(r => !r.restored).reduce((a, r) => { a[r.mode] += r.bytes; return a; }, { trash: 0, delete: 0 });
 
-  const decide = (id: string, d: L.Decision) => {
+  const decide = (id: string, d: L.Decision, from?: 'compare') => {
+    mascotBus.react(from === 'compare' ? 'compare' : d);   // Lil reacts the same happy way to every choice
     commit(s => { const r = L.applyDecision(s.decisions, s.history, id, d); const days = L.logDecision(s.days);
       const before = s.days[L.dayKey(Date.now())]?.activeMs || 0, after = days[L.dayKey(Date.now())].activeMs, goal = s.settings.goalMin * 60000;
       if (before < goal && after >= goal) setTimeout(() => say(`${s.settings.goalMin} minutes today. That’s your daily goal.`, 3500), 0);
@@ -86,6 +89,7 @@ function Main() {
   };
   const undo = () => {
     const r = L.undoLast(S.decisions, S.history); if (!r) { say('Nothing to undo'); return; }
+    mascotBus.react('undo');
     commit(s => ({ ...s, decisions: r.decisions, history: r.history, front: r.entry.prev ? s.front : [r.entry.id, ...s.front.filter(x => x !== r.entry.id)] }));
     const m = byId.get(r.entry.id); say('Undone' + (m?.filename ? ': ' + m.filename : ''));
   };
@@ -108,14 +112,14 @@ function Main() {
       case 'about': return <About onBack={() => setScreen({ name: 'home' })} />;
       case 'stats': return <StatsScreen S={S} storage={storage} say={say} onBack={() => setScreen({ name: 'home' })} />;
       case 'months': return <MonthsScreen live={live} S={S} commit={commit} go={setScreen} onBack={() => setScreen({ name: 'home' })} />;
-      case 'compare': return <CompareScreen live={live} S={S} onDecide={decide} onUndo={undo} onBack={() => setScreen({ name: 'home' })} />;
+      case 'compare': return <CompareScreen live={live} S={S} onDecide={(id, d) => decide(id, d, 'compare')} onUndo={undo} onBack={() => setScreen({ name: 'home' })} />;
       default: return <Home otd={{ offset: otdOffset, setOffset: setOtdOffset, week: otdWeek, setWeek: setOtdWeek }} more={{ open: moreOpen, setOpen: setMoreOpen }} S={S} live={live} decks={decks} byId={byId} today={today} storage={storage} trash={trash} totals={totals} pile={pile} pileBytes={pileBytes} sortedCount={sortedCount}
         access={access} loading={loading || items === null} update={update} go={setScreen}
         onMoreAccess={async () => { const a = await requestAccess(); setAccess(a); loadMedia(); }} />;
     }
   })();
   return (
-    <SafeAreaView style={st.fill} edges={['top', 'bottom']}>
+    <SafeAreaView style={st.fill} edges={['top', 'bottom']} onTouchStart={() => mascotBus.poke()}>
       {body}
       {toast ? <View style={st.toast} pointerEvents="none"><Text style={{ color: C.ink, fontSize: 14 }}>{toast}</Text></View> : null}
     </SafeAreaView>
@@ -123,6 +127,10 @@ function Main() {
 }
 
 /* ---------------- screens ---------------- */
+/** Lil Guy, if shown in Settings. peek = peeking up from the header on the calmer screens. */
+function Lil({ S, size, peek }: { S: Store.Saved; size: number; peek?: boolean }) {
+  return S.settings.lilOn ? <Mascot size={size} peek={peek} calm={S.settings.lilCalm} /> : null;
+}
 function BackupNotice({ compact }: { compact?: boolean }) {
   return (
     <Card style={{ borderWidth: 1, borderColor: '#4a4226', backgroundColor: '#1f1d16' }}>
@@ -175,7 +183,7 @@ function Home(p: { otd: { offset: number; setOffset: (n: number) => void; week: 
   const sections: [string, L.Deck['group']][] = [['Sort', 'main'], ['Moments', 'moments'], ['By kind', 'kinds'], ['Folders', 'folders']];
   return (
     <ScrollView contentContainerStyle={st.pad}>
-      <View style={st.row}><Text style={[T.h1, { color: C.ink }]}>Swipe <Text style={{ color: C.acc }}>Clean</Text></Text><View style={{ flex: 1 }} />
+      <View style={st.row}><Text style={[T.h1, { color: C.ink }]}>Swipe <Text style={{ color: C.acc }}>Clean</Text></Text><View style={{ marginLeft: 8, alignSelf: 'flex-end' }}><Lil S={S} size={46} peek /></View><View style={{ flex: 1 }} />
         <Pressable onPress={() => p.go({ name: 'settings' })} style={st.chip}><Text style={T.m}>⚙︎</Text></Pressable>
         <Pressable onPress={() => p.go({ name: 'about' })} style={st.chip}><Text style={T.m}>Privacy</Text></Pressable></View>
       {p.update ? <Card style={{ borderColor: C.acc, borderWidth: 1 }}><Text style={T.b}>Version {p.update.versionName} is available.</Text><Btn title="Download update" kind="pri" onPress={() => openDownload(p.update!)} /></Card> : null}
@@ -262,6 +270,7 @@ function MonthsScreen(p: { live: L.Media[]; S: Store.Saved; commit: (f: (s: Stor
     <View style={{ flex: 1 }}>
       <View style={[st.row, { padding: 14 }]}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable>
         <View style={{ flex: 1, marginLeft: 8 }}><Text style={T.h2}>Month by month</Text><Text style={T.s}>{done} of {ms.length} months reviewed</Text></View>
+        <Lil S={p.S} size={40} peek />
         <Pressable onPress={() => p.commit(x => ({ ...x, settings: { ...x.settings, monthSort: sort === 'date' ? 'size' : 'date' } }))} style={st.chip}><Text style={T.m}>Sort: {sort === 'date' ? 'newest' : 'size'}</Text></Pressable></View>
       <View style={{ paddingHorizontal: 14 }}><Bar pct={ms.length ? done / ms.length : 0} color={C.teal} h={5} /></View>
       <FlatList data={ms} keyExtractor={m => m.key} contentContainerStyle={{ padding: 14 }} renderItem={({ item: m }) => (
@@ -286,6 +295,7 @@ function CompareScreen(p: { live: L.Media[]; S: Store.Saved; onDecide: (id: stri
     <View style={{ flex: 1 }}>
       <View style={[st.row, { padding: 14 }]}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable>
         <View style={{ flex: 1, marginLeft: 8 }}><Text style={T.h2}>Compare look-alikes</Text><Text style={T.s}>{open.length} groups with undecided items · you choose for each one</Text></View>
+        <Lil S={p.S} size={38} />
         <Pressable onPress={p.onUndo} style={st.chip}><Text style={T.m}>↶</Text></Pressable></View>
       {!g ? <Text style={[T.m, { textAlign: 'center', marginTop: 40 }]}>No look-alike groups left to compare.</Text> : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 30 }}>
@@ -321,6 +331,7 @@ function SwipeScreen(p: { deck?: L.Deck; S: Store.Saved; byId: Map<string, L.Med
       <View style={[st.row, { paddingVertical: 8 }]}>
         <Pressable onPress={p.onBack} style={st.chip} testID="back"><Text style={T.b}>‹</Text></Pressable>
         <View style={{ flex: 1, marginHorizontal: 8 }}><Text style={[T.b, { fontWeight: '700' }]} numberOfLines={1}>{p.deck.title}</Text><Text style={T.s}>{done} of {stats.total}{stats.later && !p.deck.laterDeck ? ` · ${stats.later} for later` : ''} · {mins} of {goal} min today</Text></View>
+        <Lil S={p.S} size={40} />
         <Pressable onPress={p.onPile} style={[st.chip, { backgroundColor: '#3a2430' }]}><Text style={[T.m, { color: C.remove }]}>Pile {p.pileCount}</Text></Pressable>
       </View>
       <Bar pct={stats.total ? done / stats.total : 0} color={C.keep} h={4} />
@@ -376,7 +387,7 @@ function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number
   return (
     <ScrollView contentContainerStyle={st.pad}>
       <View style={[st.row, { marginBottom: 6 }]}><Pressable onPress={p.onBack} style={st.chip} testID="back"><Text style={T.b}>‹</Text></Pressable>
-        <View style={{ flex: 1, marginLeft: 8 }}><Text style={T.h2}>Stats</Text><Text style={T.s}>Only counts items Android confirmed removed in its own dialog</Text></View></View>
+        <View style={{ flex: 1, marginLeft: 8 }}><Text style={T.h2}>Stats</Text><Text style={T.s}>Only counts items Android confirmed removed in its own dialog</Text></View><Lil S={p.S} size={40} peek /></View>
       <GradCard colors={G.hero}>
         <View style={{ flex: 1 }}>
           <Text style={T.m}>All time · moved to trash or deleted</Text>
@@ -511,7 +522,7 @@ function SettingsScreen(p: { S: Store.Saved; update: UpdateInfo | null; setUpdat
   const hh = (s.remHour % 12 || 12) + ':' + String(s.remMin).padStart(2, '0') + (s.remHour >= 12 ? ' PM' : ' AM');
   return (
     <ScrollView contentContainerStyle={st.pad}>
-      <View style={st.row}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable><Text style={[T.h2, { marginLeft: 8 }]}>Settings</Text></View>
+      <View style={st.row}><Pressable onPress={p.onBack} style={st.chip}><Text style={T.b}>‹</Text></Pressable><Text style={[T.h2, { marginLeft: 8, flex: 1 }]}>Settings</Text><Lil S={p.S} size={40} peek /></View>
       <Card><Text style={T.b}>Daily goal</Text><View style={[st.row, { flexWrap: 'wrap', marginTop: 6 }]}>{[5, 10, 15, 20, 30].map(v => <Opt key={v} v={v} cur={s.goalMin} on={v => { set({ goalMin: v }); if (s.reminder) applyReminder(true, s.remHour, s.remMin, v); }} label={v + ' min'} />)}</View>
         <Text style={[T.s, { marginTop: 6 }]}>Counts active sorting time. Breaks longer than a minute don’t count.</Text></Card>
       <Card><View style={st.row}><Text style={[T.b, { flex: 1 }]}>Daily reminder</Text><Switch value={s.reminder} onValueChange={v => applyReminder(v)} /></View>
@@ -520,6 +531,11 @@ function SettingsScreen(p: { S: Store.Saved; update: UpdateInfo | null; setUpdat
           <Pressable style={st.chip} onPress={() => applyReminder(s.reminder, (s.remHour + 23) % 24, s.remMin)}><Text style={T.b}>− h</Text></Pressable>
           <Pressable style={st.chip} onPress={() => applyReminder(s.reminder, (s.remHour + 1) % 24, s.remMin)}><Text style={T.b}>+ h</Text></Pressable>
           <Pressable style={st.chip} onPress={() => applyReminder(s.reminder, s.remHour, (s.remMin + 15) % 60)}><Text style={T.b}>+15m</Text></Pressable></View></Card>
+      <Card><Text style={T.b}>Lil Guy</Text>
+        <Text style={T.s}>Lil is the little buddy at the top of the screen. Lil is cheering you on and is just as happy whatever you pick. Give guy a tap to say hi.</Text>
+        <View style={[st.row, { marginTop: 6 }]}><Text style={[T.b, { flex: 1 }]}>Show Lil</Text><Switch testID="lil-on" value={s.lilOn} onValueChange={v => set({ lilOn: v })} /></View>
+        <View style={st.row}><Text style={[T.b, { flex: 1 }]}>Calm mode</Text><Switch testID="lil-calm" value={s.lilCalm} disabled={!s.lilOn} onValueChange={v => set({ lilCalm: v })} /></View>
+        <Text style={T.s}>Calm mode keeps guy still, apart from tiny reactions. If Android’s “Remove animations” is on, Lil stays still anyway.</Text></Card>
       <Card><View style={st.row}><Text style={[T.b, { flex: 1 }]}>Show days-in-a-row</Text><Switch value={s.showStreak} onValueChange={v => set({ showStreak: v })} /></View>
         <Text style={T.s}>Optional. It only counts up. Missing a day is fine and nothing is lost.</Text></Card>
       <Card><Text style={T.b}>“Recent” caution</Text><Text style={T.s}>Shows a note on items newer than this, since Google Photos may not have backed them up yet. It’s only a date check. The app can’t see backup status.</Text>

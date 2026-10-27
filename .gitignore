@@ -34,3 +34,19 @@ logs/
 *.mov
 *.zip
 .DS_Store
+
+# per-project config and generated files (never commit)
+config.local.json
+config.generated.json
+android/app/android/
+android/keys/
+android/dist/
+android/publish-site/
+android/screens/
+android/testmedia/
+web/site/
+web/test/node_modules/
+web/test/out-*.csv
+web/app/screens/
+data/
+.expo/

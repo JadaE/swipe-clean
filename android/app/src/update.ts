@@ -1,7 +1,8 @@
 // The ONLY network call in the app: GET a small version file from the app's own here.now site, at most once a day.
 // It never sends anything about your photos. Downloading an update opens the browser.
 import { Linking } from 'react-native';
-import { UPDATE_URL, SITE, VERSION_CODE } from './version';
+import { VERSION_CODE } from './version';
+import { UPDATE_URL, SITE } from './config';
 export type UpdateInfo = { versionCode: number; versionName: string; apkUrl: string; notes: string };
 export async function fetchLatest(): Promise<UpdateInfo | null> {
   const r = await fetch(UPDATE_URL + '?t=' + Date.now(), { method: 'GET', headers: { Accept: 'application/json' } });
