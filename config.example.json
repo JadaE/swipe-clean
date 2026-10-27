@@ -1,0 +1,15 @@
+{
+  "neverPublishTo": [],
+  "web": {
+    "slug": "YOUR-SITE-SLUG",
+    "pathToken": "YOUR_SECRET_PATH",
+    "publishSiteDir": "/ABSOLUTE/PATH/TO/EXISTING/WEB/SITE/FOLDER"
+  },
+  "android": {
+    "slug": "YOUR-SITE-SLUG",
+    "installPath": "YOUR_SECRET_PATH",
+    "updateChannelPath": "YOUR_UPDATE_CHANNEL_PATH",
+    "keystorePassword": "YOUR_KEYSTORE_PASSWORD",
+    "publishSiteDir": "/ABSOLUTE/PATH/TO/EXISTING/ANDROID/SITE/FOLDER"
+  }
+}
