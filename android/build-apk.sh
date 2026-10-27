@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local signed release build of Swipe Clean (no EAS). Pattern copied from fantasy-football/build-apk.sh, own keystore.
+# Local signed release build of Swipe Clean (no EAS)., own keystore.
 # Usage: bash android/build-apk.sh
 # Config: repo-root config.local.json (falls back to config.example.json for checks; the signed release needs the real one + keys/swipeclean.keystore).
 set -euo pipefail

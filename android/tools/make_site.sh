@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Stage the install page + APK for one version under its secret path, and point the update channel at it.
+# Stage the install page + APK for one version INTO the existing publishSiteDir (keeps older APKs), and point the update channel at it.
 # Usage: bash tools/make_site.sh   (reads version from app/app.json)
 set -euo pipefail
-D=$(cd "$(dirname "$0")/.." && pwd); CFG=$D/../config.local.json; SITE=$D/publish-site
-[ -f "$CFG" ] || { echo "make_site needs the real config.local.json (not the example)" >&2; exit 1; }
-SLUG=$(jq -r .android.slug $CFG); INST=$(jq -r .android.installPath $CFG); UPD=$(jq -r .android.updateChannelPath $CFG)
+D=$(cd "$(dirname "$0")/.." && pwd); CFG=${SWIPECLEAN_CONFIG:-$D/../config.local.json}
+[ -f "$CFG" ] || { echo "REFUSING: make_site needs the real config.local.json (not the example)" >&2; exit 1; }
+SLUG=$(jq -r .android.slug "$CFG"); INST=$(jq -r .android.installPath "$CFG"); UPD=$(jq -r .android.updateChannelPath "$CFG")
+case "$SLUG$INST$UPD" in *YOUR*|"") echo "REFUSING: config has placeholder or missing values" >&2; exit 1;; esac
+. "$D/tools/site-check.sh"   # sets SITE = android.publishSiteDir; refuses unless it is the existing, populated site folder
 V=$(node -e "console.log(require('$D/app/app.json').expo.version)"); VC=$(node -e "console.log(require('$D/app/app.json').expo.android.versionCode)")
-APK=SwipeClean-v$V.apk; mkdir -p $SITE/$INST $SITE/$UPD; cp $D/dist/$APK $SITE/$INST/
+APK=SwipeClean-v$V.apk; cp $D/dist/$APK $SITE/$INST/
 SHA=$(sha256sum $D/dist/$APK | cut -c1-16); SIZE=$(du -m $D/dist/$APK | cut -f1)
 SHOTS=""; if ls $D/screens/site/*.png >/dev/null 2>&1; then mkdir -p $SITE/$INST/shots; cp $D/screens/site/*.png $SITE/$INST/shots/; for f in $SITE/$INST/shots/*.png; do n=$(basename $f); SHOTS+="<a href=\"shots/$n\"><img loading=lazy src=\"shots/$n\" alt=\"\"></a>"; done; fi
 cat > $SITE/$INST/index.html <<H

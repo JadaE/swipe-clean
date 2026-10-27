@@ -19,11 +19,12 @@ cd web && npm install && npm test  # Playwright test (demo mode + mocked Picker 
 
 | Section | Keys |
 |---|---|
-| top level | `neverPublishTo` (list of other projects' site slugs the publish scripts must refuse) |
-| `web` | `slug`, `pathToken` |
-| `android` | `slug`, `installPath`, `updateChannelPath`, `keystorePassword` |
+| top level | `neverPublishTo` (site slugs the publish scripts must refuse; `[]` in the example) |
+| `web` | `slug`, `pathToken`, `publishSiteDir` |
+| `android` | `slug`, `installPath`, `updateChannelPath`, `keystorePassword`, `publishSiteDir` |
 
 - Android app code reads config only through `android/app/src/config.ts`; `android/tools/sync-config.sh` (run by `npm test` and `build-apk.sh`) writes the app's two values into the gitignored `src/config.generated.json`. The keystore password is never copied into the app.
+- `publishSiteDir` (absolute path) is the EXISTING site folder. Releases are staged into it (Android: `tools/make_site.sh` adds the new APK and `version.json`; web: `publish.sh` refreshes `<pathToken>/`) and the whole folder is then uploaded, so earlier APKs stay online and the here.now state (`.herenow`, next to the folder) is reused. The publish scripts refuse a missing, non-existent or unpopulated folder (Android needs the earlier `SwipeClean-v0.0.*.apk` files and the install and update-channel folders). `DRY_RUN=1 bash android/publish.sh` / `web/publish.sh` runs every check without changing or publishing anything.
 - Shell scripts read the file with `jq`. The signing keystore stays in gitignored `android/keys/swipeclean.keystore`.
 
 ## Not included (set up locally)
