@@ -1,8 +1,9 @@
 // Swipe Clean v0.01: sort your phone's photos and videos yourself, one swipe at a time.
 // The app never decides, suggests or pre-selects anything. Removal only happens through Android's own confirmation dialog.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, Modal, FlatList, AppState, Vibration, Linking, Alert, BackHandler, ActivityIndicator, Switch } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, Pressable, StyleSheet, useColorScheme, Modal, FlatList, useWindowDimensions, AppState, Vibration, Linking, Alert, BackHandler, ActivityIndicator, Switch } from 'react-native';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C, G, onTheme, applyTheme, resolveTheme, themeName } from './src/theme';
@@ -73,6 +74,7 @@ function Main() {
 
   // Appearance: Dark (default) / Light / Match my phone. Applied before anything below renders.
   const phone = useColorScheme();
+  const insets = useSafeAreaInsets(); // the top bar draws its surface under the status bar and pads by insets.top itself
   applyTheme(resolveTheme(saved?.settings.theme, phone));
   if (!saved) return <View style={st.fill} />;
   const S = saved;
@@ -122,9 +124,9 @@ function Main() {
     }
   })();
   return (
-    <SafeAreaView style={st.fill} edges={['top', 'bottom']} onTouchStart={() => mascotBus.poke()}>
+    <SafeAreaView style={st.fill} edges={['bottom']} onTouchStart={() => mascotBus.poke()}>
       <StatusBar style={themeName() === 'light' ? 'dark' : 'light'} />
-      {body}
+      {screen.name === 'welcome' || screen.name === 'access' ? <View style={{ flex: 1, paddingTop: insets.top }}>{body}</View> : body}
       {toast ? <View style={st.toast} pointerEvents="none"><Text style={{ color: C.ink, fontSize: 14 }}>{toast}</Text></View> : null}
     </SafeAreaView>
   );
@@ -133,23 +135,46 @@ function Main() {
 /* ---------------- screens ---------------- */
 /**
  * The same top bar on every page: [left side] [Lil, centred] [right side]. Both sides get equal flex so Lil stays in the
- * middle; with Show Lil off the sides simply meet in the middle. Headroom above Lil (LIL_HEAD) leaves space for the bounce,
- * hops, spins and floating hearts, so guy is never clipped (the status bar is already handled by the SafeAreaView).
+ * middle; with Show Lil off the sides simply meet in the middle (and the bottom edge is flat). The bar's surface runs up
+ * under the status bar (it pads by the top inset itself). Its bottom edge is flat except for a rounded cradle under Lil.
+ * Headroom above Lil (LIL_HEAD) leaves space for the bounce, hops, spins and floating hearts, so guy is never clipped.
  */
-const LIL_SIZE = 56, LIL_HEAD = 24;
+const LIL_SIZE = 56, LIL_HEAD = 24, LIL_COL = LIL_SIZE + 8;
+const BUMP_D = 24;   // how far the rounded cradle under Lil dips below the flat edge
+const BUMP_W = 56;   // half-width of the cradle where it leaves the flat edge
+const LIL_SINK = 18; // Lil sits this much lower than the side content, down into the cradle
+/** Header surface: flat bottom edge everywhere except a rounded bump under Lil (centre). */
+function HeaderShape({ w, h, bump }: { w: number; h: number; bump: boolean }) {
+  const cx = w / 2, a = BUMP_W, r = LIL_SIZE / 2 + 4, y = h, d = BUMP_D;
+  const edge = bump
+    ? `M0 ${y} H${cx - a} C${cx - a + 22} ${y} ${cx - r} ${y + d} ${cx} ${y + d} C${cx + r} ${y + d} ${cx + a - 22} ${y} ${cx + a} ${y} H${w}`
+    : `M0 ${y} H${w}`;
+  return (
+    <Svg width={w} height={h + (bump ? d : 0) + 1} style={{ position: 'absolute', left: 0, top: 0 }} pointerEvents="none">
+      <Path d={`${edge} V0 H0 Z`} fill={C.card} />
+      <Path d={edge} fill="none" stroke={C.line} strokeWidth={1} />
+    </Svg>);
+}
 function TopBar({ S, left, right, style }: { S: Store.Saved; left?: React.ReactNode; right?: React.ReactNode; style?: any }) {
   const on = S.settings.lilOn;
+  const top = useSafeAreaInsets().top;
+  const [size, setSize] = useState({ w: 0, h: 0 });
   return (
-    <View style={[st.topBar, { paddingTop: on ? LIL_HEAD : 10 }, style]} testID="topbar">
-      <View style={[st.row, { flex: 1, minWidth: 0 }]}>{left}</View>
-      {on ? <View style={{ width: LIL_SIZE + 16, alignItems: 'center' }}><Mascot size={LIL_SIZE} calm={S.settings.lilCalm} outline={themeName() === 'light' ? 'rgba(30,27,58,0.28)' : undefined} /></View> : <View style={{ width: 12 }} />}
-      <View style={[st.row, { flex: 1, minWidth: 0, justifyContent: 'flex-end' }]}>{right}</View>
+    <View style={[{ zIndex: 10, paddingBottom: on ? BUMP_D : 0, marginBottom: 4 }, style]}
+      onLayout={e => { const { width, height } = e.nativeEvent.layout; if (width !== size.w || height !== size.h) setSize({ w: width, h: height }); }}>
+      {size.w ? <HeaderShape w={size.w} h={size.h - (on ? BUMP_D : 0)} bump={on} /> : null}
+      <View style={[st.topBar, { paddingTop: top + (on ? LIL_HEAD : 10) }]} testID="topbar">
+        <View style={[st.row, { flex: 1, minWidth: 0 }]}>{left}</View>
+        {on ? <View style={{ width: LIL_COL, alignItems: 'center', marginBottom: -LIL_SINK }}><Mascot size={LIL_SIZE} calm={S.settings.lilCalm} outline={themeName() === 'light' ? 'rgba(30,27,58,0.28)' : undefined} /></View> : <View style={{ width: 16 }} />}
+        <View style={[st.row, { flex: 1, minWidth: 0, justifyContent: 'flex-end' }]}>{right}</View>
+      </View>
     </View>);
 }
 /** Small stat block in the top bar: a label on top, the value under it. */
 function Stat({ label, value, align = 'left', testID }: { label: string; value: string; align?: 'left' | 'right'; testID?: string }) {
+  const gap = useWindowDimensions().width < 400 ? 10 : 14; // clear space from Back / Pile, and still fits at 360dp
   return (
-    <View style={{ marginHorizontal: 6, alignItems: align === 'left' ? 'flex-start' : 'flex-end', flexShrink: 1 }} testID={testID}>
+    <View style={{ marginHorizontal: gap, alignItems: align === 'left' ? 'flex-start' : 'flex-end', flexShrink: 1 }} testID={testID}>
       <Text style={st.statLabel} numberOfLines={1}>{label}</Text><Text style={st.statValue} numberOfLines={1}>{value}</Text>
     </View>);
 }
@@ -355,8 +380,8 @@ function SwipeScreen(p: { deck?: L.Deck; S: Store.Saved; byId: Map<string, L.Med
   const goal = p.S.settings.goalMin, mins = Math.floor(p.today.activeMs / 60000);
   return (
     <LinearGradient colors={G.bg as any} style={{ flex: 1, paddingHorizontal: 14 }}>
-      <TopBar S={p.S} style={{ paddingHorizontal: 0 }} left={<><Back onPress={p.onBack} /><Stat label="Photos" value={`${done}/${stats.total}`} testID="stat-photos" /></>}
-        right={<><Stat label="Minutes" value={`${mins}/${goal}`} align="right" testID="stat-minutes" /><Pressable onPress={p.onPile} style={[st.chip, { backgroundColor: C.pileBg }]}><Text style={[T.m, { color: C.remove }]}>Pile {p.pileCount}</Text></Pressable></>} />
+      <TopBar S={p.S} style={{ marginHorizontal: -14 }} left={<><Back onPress={p.onBack} /><Stat label="Photos" value={`${done}/${stats.total}`} testID="stat-photos" /></>}
+        right={<><Stat label="Minutes" value={`${mins}/${goal}`} align="right" testID="stat-minutes" /><Pressable onPress={p.onPile} style={[st.chip, { marginLeft: 0, paddingHorizontal: 11, backgroundColor: C.pileBg }]}><Text style={[T.m, { color: C.remove }]}>Pile {p.pileCount}</Text></Pressable></>} />
       <Bar pct={stats.total ? done / stats.total : 0} color={C.keep} h={4} />
       <Text style={[st.under, { paddingHorizontal: 0 }]} numberOfLines={1} testID="deck-title">{p.deck.title}{stats.later && !p.deck.laterDeck ? ` · ${stats.later} for later` : ''}</Text>
       <View style={{ flex: 1, marginTop: 6, marginBottom: 12 }}>
@@ -603,8 +628,8 @@ function About({ S, onBack }: { S: Store.Saved; onBack: () => void }) {
 /** Screen styles, rebuilt when the theme changes. */
 const mkSt = () => StyleSheet.create({
   fill: { flex: 1, backgroundColor: C.bg },
-  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingBottom: 8, zIndex: 10 },
-  statLabel: { color: C.dim, fontSize: 11, letterSpacing: 0.3 }, statValue: { color: C.ink, fontSize: 16, fontWeight: '700' },
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 10 },
+  statLabel: { color: C.dim, fontSize: 13, letterSpacing: 0.2 }, statValue: { color: C.ink, fontSize: 21, fontWeight: '700', lineHeight: 25 },
   under: { color: C.dim, fontSize: 12, textAlign: 'center', paddingHorizontal: 14, paddingTop: 6 }, pad: { padding: 16, paddingBottom: 40 }, row: { flexDirection: 'row', alignItems: 'center' },
   chip: { backgroundColor: C.card2, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, marginLeft: 6, marginVertical: 3 },
   deck: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 14, padding: 14, marginVertical: 4 },
