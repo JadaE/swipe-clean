@@ -1,5 +1,7 @@
 # Swipe Clean
 
+> 🤖 This project was created by [Grok Bot](https://cursor.com) from Cursor.
+
 Swipe through your photos to decide what to keep and what to delete.
 
 - `android/` Expo / React Native Android app. It sorts photos from the device library with swipes, undo and streaks, and uses the system trash/delete dialogs. A small Kotlin module (`app/modules/swipeclean-media`) talks to MediaStore.
