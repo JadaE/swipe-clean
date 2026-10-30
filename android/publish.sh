@@ -25,11 +25,18 @@ find "$SITE" -name '*.keystore' | grep -q . && die "keystore found in site folde
 STATE=$(dirname "$SITE")   # here.now keeps its local state in <cwd>/.herenow; the existing one is beside the site folder
 [ -d "$STATE/.herenow" ] || echo "note: no $STATE/.herenow state found (publishing with --slug still works)" >&2
 NAPK=$(ls "$SITE/$INST"/SwipeClean-v*.apk | wc -l); NFILES=$(find "$SITE" -type f | wc -l)
-if [ "${DRY_RUN:-}" = 1 ]; then echo "DRY RUN OK: would upload $NFILES files from the existing site folder ($NAPK APKs, latest staged: $APKF). Nothing published."; exit 0; fi
-# here.now publish script: $HERENOW_PUBLISH_SH, else config key herenowPublishScript (a path; a * glob is allowed)
+# here.now publish script: $HERENOW_PUBLISH_SH, else config key herenowPublishScript (a path; a * glob is allowed). Checked before the dry-run exit.
 PUBPAT=${HERENOW_PUBLISH_SH:-$(jq -r '.herenowPublishScript//empty' "$CFG")}
 PUB=$( [ -n "$PUBPAT" ] && ls -d $PUBPAT 2>/dev/null | head -1 || true)
 [ -n "$PUB" ] || { echo "here.now publish.sh not found (set HERENOW_PUBLISH_SH or herenowPublishScript in config.local.json)" >&2; exit 1; }
+case "$PUB" in /*) ;; *) echo "REFUSING: here.now publisher path must be absolute" >&2; exit 1;; esac
+[ "$(basename "$PUB")" = publish.sh ] && [ -f "$PUB" ] || { echo "REFUSING: here.now publisher path must point to an existing publish.sh" >&2; exit 1; }
+# release gate script: $RELEASE_GATE_SH, else config key releaseGateScript (absolute path); see the Release gate process
+G=${RELEASE_GATE_SH:-$(jq -r '.releaseGateScript//empty' "$CFG")}
+case "$G" in /*) ;; *) echo "REFUSING: release gate not configured (set RELEASE_GATE_SH or releaseGateScript to an absolute path)" >&2; exit 1;; esac
+[ -f "$G" ] || { echo "REFUSING: release gate script not found" >&2; exit 1; }
+if [ "${DRY_RUN:-}" = 1 ]; then echo "DRY RUN OK: would upload $NFILES files from the existing site folder ($NAPK APKs, latest staged: $APKF). Nothing published."; exit 0; fi
+GV=$(jq -r .versionName "$SITE/$UPD/version.json"); bash "$G" swipe-clean "$GV" "$SITE/$INST/SwipeClean-v$GV.apk" || { echo "Release gate did not pass; NOT publishing. Tell Review & Release." >&2; exit 1; }  # release gate (Review & Release); do not remove or bypass
 [ -n "${HERENOW_API_KEY:-}" ] || [ -f "$HOME/.herenow/credentials" ] || { echo "No here.now API key" >&2; exit 1; }
 cd "$STATE"
 OUT=$(bash "$PUB" "$SITE" --client cursor --slug "$SLUG" 2>&1) || { echo "$OUT" | grep -viE 'bearer|api_key|claim' >&2; echo "PUBLISH FAILED" >&2; exit 1; }

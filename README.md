@@ -21,7 +21,7 @@ cd web && npm install && npm test  # Playwright test (demo mode + mocked Picker 
 
 | Section | Keys |
 |---|---|
-| top level | `neverPublishTo` (site slugs the publish scripts must refuse; `[]` in the example), `herenowPublishScript` (absolute path to the here.now `publish.sh`; a `*` glob is allowed; the `HERENOW_PUBLISH_SH` env var overrides it) |
+| top level | `neverPublishTo` (site slugs the publish scripts must refuse; `[]` in the example), `herenowPublishScript` (absolute path to the here.now `publish.sh`; a `*` glob is allowed; the `HERENOW_PUBLISH_SH` env var overrides it; must resolve to an existing absolute `publish.sh`, checked even on dry runs), `releaseGateScript` (absolute path to the release gate script that must pass before any upload; the `RELEASE_GATE_SH` env var overrides it) |
 | `web` | `slug`, `pathToken`, `publishSiteDir` |
 | `android` | `slug`, `installPath`, `updateChannelPath`, `keystorePassword`, `publishSiteDir` |
 

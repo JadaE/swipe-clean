@@ -1,10 +1,12 @@
 {
   "neverPublishTo": [],
   "herenowPublishScript": "/ABSOLUTE/PATH/TO/here-now/scripts/publish.sh",
+  "releaseGateScript": "/ABSOLUTE/PATH/TO/release-gate.sh",
   "web": {
     "slug": "YOUR-SITE-SLUG",
     "pathToken": "YOUR_SECRET_PATH",
-    "publishSiteDir": "/ABSOLUTE/PATH/TO/EXISTING/WEB/SITE/FOLDER"
+    "publishSiteDir": "/ABSOLUTE/PATH/TO/EXISTING/WEB/SITE/FOLDER",
+    "version": "0.0.0"
   },
   "android": {
     "slug": "YOUR-SITE-SLUG",
