@@ -20,7 +20,7 @@ APKF=$(jq -r '.apkUrl//empty' "$SITE/$UPD/version.json" 2>/dev/null | sed 's#.*/
 [ -f "$SITE/index.html" ] && grep -q noindex "$SITE/index.html" || die "root index.html lacks noindex"
 KEYVAL="${HERENOW_API_KEY:-$(cat "$HOME/.herenow/credentials" 2>/dev/null || true)}"
 if [ -n "$KEYVAL" ] && grep -rqF -- "$KEYVAL" "$SITE"; then die "API key found in site files"; fi
-KSP=$(jq -r '.android.keystorePassword//empty' "$CFG"); if [ -n "$KSP" ] && grep -rqF -- "$KSP" "$SITE"; then die "keystore password found in site files"; fi
+for KK in keystorePassword releaseKeystorePassword; do KSP=$(jq -r ".android.$KK//empty" "$CFG"); if [ -n "$KSP" ] && grep -rqF -- "$KSP" "$SITE"; then die "keystore password found in site files"; fi; done
 find "$SITE" -name '*.keystore' | grep -q . && die "keystore found in site folder"
 STATE=$(dirname "$SITE")   # here.now keeps its local state in <cwd>/.herenow; the existing one is beside the site folder
 [ -d "$STATE/.herenow" ] || echo "note: no $STATE/.herenow state found (publishing with --slug still works)" >&2
