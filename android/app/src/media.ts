@@ -2,11 +2,13 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import Native from 'swipeclean-media';
 import type { Media } from './logic';
+import type { Status } from './trash';
 
 export const native = Native as null | {
   sdkInt: number; canTrash: boolean;
   queryAll(): Promise<Media[]>;
-  stillPresent(uris: string[]): Promise<string[]>;
+  stillPresent(uris: string[]): Promise<string[]>; // legacy: counts trashed items as present, don't use
+  mediaStatus(uris: string[]): Promise<Status[]>;   // read-only: present / trashed (+ expiresAt) / gone / unknown
   trashInfo(): Promise<{ supported: boolean; bytes: number; count: number }>;
   storage(): Promise<{ total: number; free: number }>;
   thumbnail(uri: string, size: number): Promise<string>;
