@@ -91,9 +91,65 @@ class SwipeCleanMediaModule : Module() {
       out
     }
 
-    /** Which of these ids are still visible (not trashed, not deleted). Used to confirm space only after the system result. */
+    /**
+     * Legacy (v0.0.6 and older). NOTE: a query on a single-item URI makes MediaProvider include trashed rows, so an item
+     * that was just moved to the trash still counts as present here. That is why v0.0.6 never recorded trash moves.
+     * Kept only so older JS keeps working; the app now uses mediaStatus.
+     */
     AsyncFunction("stillPresent") { uris: List<String> ->
       uris.filter { u -> try { cr.query(Uri.parse(u), arrayOf("_id"), null, null, null)?.use { it.count > 0 } ?: false } catch (e: Exception) { false } }
+    }
+
+    /**
+     * READ-ONLY trash check for items Swipe Clean recorded. For each content:// URI: what MediaStore says right now, with
+     * trashed rows included (QUERY_ARG_MATCH_TRASHED = MATCH_INCLUDE, Android 11+). Never changes anything.
+     * state: "present" (on the phone, not in the trash) | "trashed" (in Android's trash; expiresAt = when Android plans to
+     * empty it, ms) | "gone" (the query ran and the row no longer exists) | "unknown" (couldn't check: Android 10 or older,
+     * not a photo/video URI, or the query failed). bytes/name are only returned for rows that still exist.
+     */
+    AsyncFunction("mediaStatus") { uris: List<String> ->
+      val out = LinkedHashMap<String, Map<String, Any?>>()
+      for (u in uris) out[u] = mapOf("uri" to u, "state" to "unknown")
+      if (Build.VERSION.SDK_INT < 30) return@AsyncFunction out.values.toList()
+      val bases = collections().map { it.second.toString() }.toSet()
+      // group by collection (images / video), ids only; anything else stays "unknown"
+      val groups = HashMap<String, MutableMap<Long, String>>()
+      for (u in uris) {
+        val p = try { Uri.parse(u) } catch (e: Exception) { null } ?: continue
+        val id = p.lastPathSegment?.toLongOrNull() ?: continue
+        val base = u.substring(0, u.length - (p.lastPathSegment!!.length + 1))
+        if (base !in bases) continue
+        groups.getOrPut(base) { HashMap() }[id] = u
+      }
+      val cols = arrayOf("_id", MediaStore.MediaColumns.IS_TRASHED, MediaStore.MediaColumns.DATE_EXPIRES, "_size", "_display_name")
+      for ((base, ids) in groups) {
+        for (chunk in ids.keys.chunked(200)) {
+          val args = Bundle().apply {
+            putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE)
+            putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, "_id IN (" + chunk.joinToString(",") { "?" } + ")")
+            putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, chunk.map { it.toString() }.toTypedArray())
+          }
+          try {
+            val c = cr.query(Uri.parse(base), cols, args, null) ?: continue   // null cursor: leave as "unknown"
+            val seen = HashSet<Long>()
+            c.use {
+              val iId = it.getColumnIndex("_id"); val iT = it.getColumnIndex(MediaStore.MediaColumns.IS_TRASHED)
+              val iE = it.getColumnIndex(MediaStore.MediaColumns.DATE_EXPIRES); val iS = it.getColumnIndex("_size"); val iN = it.getColumnIndex("_display_name")
+              while (it.moveToNext()) {
+                val id = it.getLong(iId); val u = ids[id] ?: continue; seen += id
+                val trashed = iT >= 0 && !it.isNull(iT) && it.getInt(iT) == 1
+                val exp = if (trashed && iE >= 0 && !it.isNull(iE)) it.getLong(iE) * 1000 else null
+                out[u] = mapOf("uri" to u, "state" to (if (trashed) "trashed" else "present"),
+                  "expiresAt" to exp?.toDouble(),
+                  "bytes" to (if (iS >= 0 && !it.isNull(iS)) it.getLong(iS).toDouble() else null),
+                  "name" to (if (iN >= 0) it.getString(iN) else null))
+              }
+            }
+            for (id in chunk) if (id !in seen) out[ids[id]!!] = mapOf("uri" to ids[id], "state" to "gone")
+          } catch (e: Exception) { /* permission or provider problem: leave this chunk "unknown" */ }
+        }
+      }
+      out.values.toList()
     }
 
     /** Total bytes currently sitting in the system trash (all apps), Android 11+. */

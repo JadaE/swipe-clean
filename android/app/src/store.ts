@@ -1,11 +1,12 @@
 // Local-only persistence (AsyncStorage on this phone). Stores decisions keyed by MediaStore id, never image data.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Decision, HistEntry, DayLog } from './logic';
-import type { StorageSnap } from './stats';
+import type { StorageSnap, RemovalRec } from './stats';
 import { Settings, DEFAULT_SETTINGS, migrateSettings } from './settings';
 export { DEFAULT_SETTINGS, migrateSettings }; export type { Settings };
 
-export type Removed = { id: string; uri: string; filename: string | null; bytes: number; at: number; mode: 'trash' | 'delete'; restored?: boolean; kind?: 'photo' | 'video'; restoredAt?: number };
+// Same shape as stats.RemovalRec (trash-check fields are optional, so records from older versions load as they are).
+export type Removed = RemovalRec & { filename: string | null };
 export type Saved = { decisions: Record<string, Decision>; history: HistEntry[]; front: string[]; days: Record<string, DayLog>; removed: Record<string, Removed>; settings: Settings; storageLog: StorageSnap[]; statsSince?: number };
 const KEY = 'swipeclean:v1';
 export async function load(): Promise<Saved> {
