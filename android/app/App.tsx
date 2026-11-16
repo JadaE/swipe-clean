@@ -13,6 +13,7 @@ import * as L from './src/logic';
 import { native, checkAccess, requestAccess, Access, shareItem } from './src/media';
 import * as Store from './src/store';
 import * as Stats from './src/stats';
+import * as Trash from './src/trash';
 import { fetchLatest, isNewer, openDownload, UpdateInfo } from './src/update';
 import { setReminder } from './src/reminder';
 import { VERSION_NAME } from './src/version';
@@ -37,10 +38,14 @@ function Main() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [otdOffset, setOtdOffset] = useState(0); const [otdWeek, setOtdWeek] = useState(false); const [moreOpen, setMoreOpen] = useState(false);
+  const [untracked, setUntracked] = useState(0); // Pile items gone from the phone with no record (size unknown)
   const toastT = useRef<any>(null);
+  const savedRef = useRef<Store.Saved | null>(null); savedRef.current = saved;
+  const accessRef = useRef<Access>('denied'); accessRef.current = access;
+  const trashChecking = useRef(false);
   const say = (m: string, ms = 2600) => { setToast(m); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(null), ms); };
 
-  const commit = useCallback((f: (s: Store.Saved) => Store.Saved) => setSaved(prev => { if (!prev) return prev; const n = f(prev); Store.save(n); return n; }), []);
+  const commit = useCallback((f: (s: Store.Saved) => Store.Saved) => setSaved(prev => { if (!prev) return prev; const n = f(prev); if (n === prev) return prev; Store.save(n); return n; }), []);
 
   const refreshDevice = useCallback(async () => {
     if (!native) return;
@@ -54,6 +59,30 @@ function Main() {
     setLoading(false); refreshDevice();
   }, [refreshDevice]);
 
+  // Trash check (v0.0.7): looks up, READ-ONLY, every item Swipe Clean moved to the trash that isn't freed or put back
+  // yet, plus Pile items that v0.0.6 trashed without recording. Runs on open, on return to the app and on Stats.
+  // Never removes, restores or changes anything on the phone; it only updates Swipe Clean's own records.
+  const checkTrash = useCallback(async () => {
+    const s0 = savedRef.current; if (!native || !native.canTrash || !native.mediaStatus || !s0 || trashChecking.current) return;
+    const full = accessRef.current === 'full';
+    const orphans = Trash.pileWithoutRecord(s0.decisions, s0.removed);
+    const uris = [...new Set([...Object.values(s0.removed).filter(Trash.needsCheck).map(r => r.uri), ...orphans.map(id => Trash.uriForId(id)!)])];
+    if (!uris.length) { setUntracked(0); return; }
+    trashChecking.current = true;
+    try {
+      const st = await native.mediaStatus(uris); const now = Date.now();
+      const found = Trash.recover(orphans, st, now); setUntracked(Trash.goneWithoutRecord(orphans, st, full).length);
+      let reload = false;
+      commit(x => {
+        const r = Trash.reconcile(x.removed, st, now, full); const removed = { ...r.removed }; let decisions = x.decisions; let changed = r.changed;
+        if (r.restored.length) { decisions = { ...decisions }; for (const id of r.restored) delete decisions[id]; reload = true; } // put back elsewhere: undecided again, like an in-app put-back
+        for (const f of found) if (!removed[f.id] || removed[f.id].restored) { removed[f.id] = { ...f, filename: f.filename ?? null }; changed = true; }
+        return changed ? { ...x, removed, decisions } : x;
+      });
+      if (reload) loadMedia();
+    } catch {} finally { trashChecking.current = false; }
+  }, [commit, loadMedia]);
+
   // boot
   useEffect(() => { (async () => {
     const s = await Store.load(); setSaved(s);
@@ -62,7 +91,8 @@ function Main() {
     // update check: at most once a day, version file only
     if (Date.now() - s.settings.lastUpdateCheck > L.DAY) fetchLatest().then(u => { if (isNewer(u)) setUpdate(u); }).catch(() => {}).finally(() => commit(x => ({ ...x, settings: { ...x.settings, lastUpdateCheck: Date.now() } })));
   })(); }, []);
-  useEffect(() => { const sub = AppState.addEventListener('change', st => { if (st === 'background') Store.flush(); if (st === 'active') refreshDevice(); }); return () => sub.remove(); }, [refreshDevice]);
+  useEffect(() => { const sub = AppState.addEventListener('change', st => { if (st === 'background') Store.flush(); if (st === 'active') { refreshDevice(); checkTrash(); } }); return () => sub.remove(); }, [refreshDevice, checkTrash]);
+  useEffect(() => { if (saved && access !== 'denied') checkTrash(); }, [!!saved, access]);
   useEffect(() => { const sub = BackHandler.addEventListener('hardwareBackPress', () => { if (screen.name !== 'home' && screen.name !== 'welcome' && screen.name !== 'access') { setScreen({ name: 'home' }); return true; } return false; }); return () => sub.remove(); }, [screen]);
 
   useEffect(() => { if (!storage || !saved || saved.storageLog.some(x => x.tag === 'baseline')) return;
@@ -82,7 +112,9 @@ function Main() {
   const pile = live.filter(m => S.decisions[m.id] === 'remove');
   const pileBytes = pile.reduce((a, m) => a + m.size, 0);
   const sortedCount = live.filter(m => S.decisions[m.id]).length;
-  const totals = Object.values(S.removed).filter(r => !r.restored).reduce((a, r) => { a[r.mode] += r.bytes; return a; }, { trash: 0, delete: 0 });
+  const tsum = Stats.trashSummary(S.removed, Date.now());
+  // trash = still in Android's trash (checked); delete = fully freed (deleted, or emptied from the trash)
+  const totals = { trash: tsum.bytes, delete: Object.values(S.removed).filter(r => !r.restored).reduce((a, r) => a + r.bytes, 0) - tsum.bytes, label: Stats.emptiesLabel(tsum) };
 
   const decide = (id: string, d: L.Decision, from?: 'compare') => {
     mascotBus.react(from === 'compare' ? 'compare' : d);   // Lil reacts the same happy way to every choice
@@ -106,8 +138,11 @@ function Main() {
       case 'swipe': return <SwipeScreen deck={screen.deck} S={S} onSound={on => commit(x => ({ ...x, settings: { ...x.settings, soundOn: on } }))} byId={byId} today={today} onDecide={decide} onUndo={undo} onBack={() => setScreen({ name: 'home' })} onPile={() => setScreen({ name: 'pile' })} pileCount={pile.length} />;
       case 'pile': return <PileScreen pile={pile} bytes={pileBytes} S={S} onBack={() => setScreen({ name: 'home' })} onUndo={undo}
         onKeep={id => { commit(s => ({ ...s, ...L.applyDecision(s.decisions, s.history, id, 'keep') })); say('Moved back to Keep (undo is available)'); }}
-        onRemoved={(list, mode) => { commit(s => { const removed = { ...s.removed }; let days = s.days; let bytes = 0;
-          for (const m of list) { removed[m.id] = { id: m.id, uri: m.uri, filename: m.filename, bytes: m.size, at: Date.now(), mode, kind: m.type === 'VIDEO' ? 'video' : 'photo' }; bytes += m.size; }
+        onRemoved={(list, mode, st) => { commit(s => { const removed = { ...s.removed }; let days = s.days; let bytes = 0; const now = Date.now(); const by = new Map(st.map(x => [x.uri, x]));
+          for (const m of list) { const x = by.get(m.uri);
+            removed[m.id] = { id: m.id, uri: m.uri, filename: m.filename, bytes: m.size, at: now, mode, kind: m.type === 'VIDEO' ? 'video' : 'photo',
+              ...(mode === 'trash' && x?.state === 'trashed' ? { checkedAt: now, ...(x.expiresAt ? { expiresAt: x.expiresAt } : {}) } : {}),
+              ...(mode === 'trash' && x?.state === 'gone' ? { freedAt: now } : {}) }; bytes += m.size; }
           days = L.logRemoval(days, bytes, mode); return { ...s, removed, days }; }); refreshDevice(); }}
         onSnaps={snaps => commit(s => ({ ...s, storageLog: s.storageLog.concat(snaps).slice(-400) }))} />;
       case 'removed': return <RemovedScreen S={S} onBack={() => setScreen({ name: 'home' })} onRestored={ids => { commit(s => { const removed = { ...s.removed }; const decisions = { ...s.decisions };
@@ -115,7 +150,7 @@ function Main() {
       case 'settings': return <SettingsScreen S={S} update={update} setUpdate={setUpdate} onBack={() => setScreen({ name: 'home' })} commit={commit} say={say}
         onClear={async () => { await Store.clearAll(); const s = await Store.load(); setSaved({ ...s, settings: { ...s.settings, seenWelcome: true } }); setScreen({ name: 'home' }); say('Cleared. Nothing is saved on this phone now.'); }} />;
       case 'about': return <About S={S} onBack={() => setScreen({ name: 'home' })} />;
-      case 'stats': return <StatsScreen S={S} storage={storage} say={say} onBack={() => setScreen({ name: 'home' })} />;
+      case 'stats': return <StatsScreen S={S} storage={storage} say={say} untracked={untracked} onOpen={checkTrash} onBack={() => setScreen({ name: 'home' })} />;
       case 'months': return <MonthsScreen live={live} S={S} commit={commit} go={setScreen} onBack={() => setScreen({ name: 'home' })} />;
       case 'compare': return <CompareScreen live={live} S={S} onDecide={(id, d) => decide(id, d, 'compare')} onUndo={undo} onBack={() => setScreen({ name: 'home' })} />;
       default: return <Home otd={{ offset: otdOffset, setOffset: setOtdOffset, week: otdWeek, setWeek: setOtdWeek }} more={{ open: moreOpen, setOpen: setMoreOpen }} S={S} live={live} decks={decks} byId={byId} today={today} storage={storage} trash={trash} totals={totals} pile={pile} pileBytes={pileBytes} sortedCount={sortedCount}
@@ -220,7 +255,7 @@ function GradCard({ children, colors = G.ring, style }: { children: React.ReactN
 }
 function Home(p: { otd: { offset: number; setOffset: (n: number) => void; week: boolean; setWeek: (b: boolean) => void }; more: { open: boolean; setOpen: (b: boolean) => void };
   S: Store.Saved; live: L.Media[]; decks: L.Deck[]; byId: Map<string, L.Media>; today: L.DayLog; storage: { total: number; free: number } | null; trash: { supported: boolean; bytes: number; count: number } | null;
-  totals: { trash: number; delete: number }; pile: L.Media[]; pileBytes: number; sortedCount: number; access: Access; loading: boolean; update: UpdateInfo | null; go: (s: Screen) => void; onMoreAccess: () => void }) {
+  totals: { trash: number; delete: number; label: string }; pile: L.Media[]; pileBytes: number; sortedCount: number; access: Access; loading: boolean; update: UpdateInfo | null; go: (s: Screen) => void; onMoreAccess: () => void }) {
   const { S, today } = p;
   const goalMs = S.settings.goalMin * 60000, streak = L.streak(S.days), monthDays = L.daysThisMonth(S.days);
   const pct = p.live.length ? p.live.filter(m => L.isFinal(S.decisions[m.id])).length / p.live.length : 0;
@@ -283,7 +318,7 @@ function Home(p: { otd: { offset: number; setOffset: (n: number) => void; week: 
           <Bar pct={(p.storage.total - p.storage.free) / p.storage.total} color={C.acc2} h={8} />
         </> : <Text style={T.b}>Storage info not available</Text>}
         <Text style={[T.b, { marginTop: 8 }]}>Cleared with Swipe Clean: <Text style={{ fontWeight: '700', color: C.keep }}>{L.fmtBytes(p.totals.trash + p.totals.delete)}</Text></Text>
-        {p.totals.trash ? <Text style={T.m}>{L.fmtBytes(p.totals.trash)} of that is sitting in Android’s trash and still takes up space. It’s freed when the trash is emptied: automatically after about 30 days, or sooner if you empty it in your Gallery or Files app.</Text> : null}
+        {p.totals.trash ? <Text style={T.m}>{L.fmtBytes(p.totals.trash)} of that is still in Android’s trash{p.totals.label ? ` (${p.totals.label})` : ''} and still takes up space until the trash is emptied, by Android on that date or sooner by you in your Gallery or Files app.</Text> : null}
         {p.trash?.supported && p.trash.count ? <Text style={[T.s, { marginTop: 4 }]}>Trash right now (all apps): {p.trash.count} items · {L.fmtBytes(p.trash.bytes)} still using space</Text> : null}
       </Card>
 
@@ -413,14 +448,17 @@ function SwipeScreen(p: { deck?: L.Deck; S: Store.Saved; byId: Map<string, L.Med
   );
 }
 
-function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number } | null; say: (m: string, ms?: number) => void; onBack: () => void }) {
+function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number } | null; say: (m: string, ms?: number) => void; untracked: number; onOpen: () => void; onBack: () => void }) {
   const [period, setPeriod] = useState<Stats.Period>('day');
+  useEffect(() => { p.onOpen(); }, []);
   const now = Date.now();
+  const ts = Stats.trashSummary(p.S.removed, now);
   const log = useMemo(() => Stats.daily(p.S.removed, p.S.days, now), [p.S.removed, p.S.days]);
   const sm = Stats.summary(log, now); const bars = Stats.series(log, period, now); const max = Math.max(1, ...bars.map(b => b.bytes));
   const restored = Object.values(p.S.removed).filter(r => r.restored).length;
   const oldest = Object.values(p.S.removed).reduce((a, r) => Math.min(a, r.at || Infinity), Infinity);
   const inTrash = sm.all.bytes - sm.all.freedBytes;
+  const when = (t: number) => { const d = new Date(t); return L.dayKey(t) === L.dayKey(now) ? `today ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : L.fmtShortDay(t); };
   const base = p.S.storageLog.find(x => x.tag === 'baseline'); const lastAfter = [...p.S.storageLog].reverse().find(x => x.tag === 'after');
   const lastBefore = lastAfter ? [...p.S.storageLog].reverse().find(x => x.tag === 'before' && x.at <= lastAfter.at) : undefined;
   const PHONE = 512e9; const split = sm.all.bytes ? sm.all.photoBytes / sm.all.bytes : 0;
@@ -444,7 +482,10 @@ function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number
           <Text testID="stats-total" style={{ color: C.ink, fontSize: 40, fontWeight: '800', marginVertical: 2 }}>{L.fmtBytes(sm.all.bytes)}</Text>
           <Text style={T.b}>{sm.all.photos} photos · {sm.all.videos} videos</Text>
           <Text style={[T.b, { marginTop: 6 }]}><Text style={{ color: C.keep, fontWeight: '700' }}>{L.fmtBytes(sm.all.freedBytes)}</Text> fully freed</Text>
-          {inTrash > 0 ? <Text style={T.m}>{L.fmtBytes(inTrash)} is still in Android’s trash and still takes up space. Android empties the trash after about 30 days (or sooner if you empty it in your Gallery or Files app). Each item counts as fully freed 30 days after it was moved, or straight away if it was deleted.</Text> : null}
+          {inTrash > 0 ? <Text testID="stats-in-trash" style={[T.b, { marginTop: 2 }]}><Text style={{ fontWeight: '700' }}>{L.fmtBytes(inTrash)}</Text> in trash{ts.count ? ` (${ts.count} item${ts.count === 1 ? '' : 's'}${ts.firstEmpty ? ', ' + Stats.emptiesLabel(ts) : ''})` : ''}</Text> : null}
+          {inTrash > 0 ? <Text style={[T.m, { marginTop: 4 }]}>Items in the trash still take up space. Android empties them on that date, or you can empty the trash sooner in your Gallery or Files app. Either way, Swipe Clean checks the trash when you open it and counts them as freed once they’re gone.</Text> : null}
+          {ts.estimatedFreed ? <Text style={[T.s, { marginTop: 4 }]}>{ts.estimatedFreed} item{ts.estimatedFreed === 1 ? '' : 's'} counted as freed by date only: Swipe Clean couldn’t check the trash (it needs full photo and video access), and the 30 days have passed.</Text> : null}
+          {ts.lastChecked ? <Text style={[T.s, { marginTop: 4 }]}>Trash last checked {when(ts.lastChecked)}</Text> : null}
         </View>
       </GradCard>
       <View style={st.row}><Tile label="Today" t={sm.today} /><Tile label="This week (from Mon)" t={sm.week} /><Tile label="This month" t={sm.month} /></View>
@@ -477,7 +518,9 @@ function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number
         <Text style={[T.s, { marginTop: 4 }]}>Used storage also changes as you take photos, install apps and so on, and trashed items keep using space until the trash empties, so these numbers won’t match the totals exactly.</Text>
       </Card>
       <Card>
-        <Text style={T.m}>{isFinite(oldest) ? `Includes every confirmed removal recorded since ${new Date(oldest).toLocaleDateString()}, including those from earlier versions.` : 'Tracking starts with your first removal.'}{restored ? ` ${restored} item${restored === 1 ? '' : 's'} you put back from the trash ${restored === 1 ? 'isn’t' : 'aren’t'} counted.` : ''} Items you only swiped never count.</Text>
+        <Text style={T.m}>{isFinite(oldest) ? `Includes every confirmed removal recorded since ${new Date(oldest).toLocaleDateString()}, including those from earlier versions.` : 'Tracking starts with your first removal.'}{restored ? ` ${restored} item${restored === 1 ? '' : 's'} you put back from the trash (here or in another app) ${restored === 1 ? 'isn’t' : 'aren’t'} counted.` : ''} Items you only swiped never count.</Text>
+        {ts.recovered ? <Text style={[T.s, { marginTop: 4 }]}>{ts.recovered} item{ts.recovered === 1 ? ' was' : 's were'} moved to the trash with an earlier version that didn’t record {ts.recovered === 1 ? 'it' : 'them'}. Swipe Clean found {ts.recovered === 1 ? 'it' : 'them'} in Android’s trash and added {ts.recovered === 1 ? 'it' : 'them'}; the day is estimated from Android’s empty date.</Text> : null}
+        {p.untracked ? <Text style={[T.s, { marginTop: 4 }]}>{p.untracked} item{p.untracked === 1 ? '' : 's'} from your Pile {p.untracked === 1 ? 'is' : 'are'} no longer on this phone but {p.untracked === 1 ? 'wasn’t' : 'weren’t'} recorded at the time, so {p.untracked === 1 ? 'its size isn’t' : 'their size isn’t'} known and {p.untracked === 1 ? 'it isn’t' : 'they aren’t'} counted.</Text> : null}
         <Btn title="Export CSV (save to Downloads + share…)" onPress={() => exportCsv(true)} testID="stats-export" />
         <Btn kind="ghost" title="Just save CSV to Downloads" onPress={() => exportCsv(false)} testID="stats-save" />
         <Text style={T.s}>The CSV stays on this phone unless you pick an app in the share sheet.</Text>
@@ -486,7 +529,7 @@ function StatsScreen(p: { S: Store.Saved; storage: { total: number; free: number
     </View>
   );
 }
-function PileScreen(p: { pile: L.Media[]; bytes: number; S: Store.Saved; onBack: () => void; onUndo: () => void; onKeep: (id: string) => void; onRemoved: (list: L.Media[], mode: 'trash' | 'delete') => void; onSnaps: (s: Stats.StorageSnap[]) => void }) {
+function PileScreen(p: { pile: L.Media[]; bytes: number; S: Store.Saved; onBack: () => void; onUndo: () => void; onKeep: (id: string) => void; onRemoved: (list: L.Media[], mode: 'trash' | 'delete', st: Trash.Status[]) => void; onSnaps: (s: Stats.StorageSnap[]) => void }) {
   const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -501,13 +544,15 @@ function PileScreen(p: { pile: L.Media[]; bytes: number; S: Store.Saved; onBack:
       let allowed = false;
       try { allowed = await native.requestSystemAction(batches[i].map(m => m.uri), mode); } catch (e: any) { setResult('Couldn’t open Android’s dialog: ' + (e?.message || e)); stopped = true; break; }
       if (!allowed) { stopped = true; break; }
-      const still = new Set(await native.stillPresent(batches[i].map(m => m.uri)));
-      const gone = batches[i].filter(m => !still.has(m.uri)); // count only what Android actually removed
-      p.onRemoved(gone, mode); ok += gone.length; bytes += gone.reduce((a, m) => a + m.size, 0);
+      const uris = batches[i].map(m => m.uri); let st: Trash.Status[] = [];
+      try { st = await native.mediaStatus(uris); } catch {}
+      const done = Trash.confirmed(uris, st, mode); // count only what Android actually moved to the trash or deleted
+      const gone = batches[i].filter(m => done.has(m.uri));
+      p.onRemoved(gone, mode, st); ok += gone.length; bytes += gone.reduce((a, m) => a + m.size, 0);
     }
     setBusy(null);
     if (ok && before) { try { const af = await native.storage(); p.onSnaps([{ at: Date.now() - 1, used: before.total - before.free, total: before.total, tag: 'before' }, { at: Date.now(), used: af.total - af.free, total: af.total, tag: 'after' }]); } catch {} }
-    const what = mode === 'trash' ? `moved to Android’s trash (${L.fmtBytes(bytes)}). Trashed items still take up space until the trash is emptied: automatically after about 30 days, or sooner from your Gallery or Files app` : `deleted (${L.fmtBytes(bytes)} freed)`;
+    const what = mode === 'trash' ? `moved to Android’s trash (${L.fmtBytes(bytes)}). Trashed items still take up space until the trash is emptied: automatically after about 30 days, or sooner from your Gallery or Files app. Stats notices either way` : `deleted (${L.fmtBytes(bytes)} freed)`;
     setResult(ok ? `${ok} items ${what}.${stopped ? ' You stopped at a batch, so the rest are still on your phone and in your pile.' : ''}` : 'Nothing was removed. Everything is still on your phone and in your pile.');
   };
   return (
@@ -538,14 +583,24 @@ function PileScreen(p: { pile: L.Media[]; bytes: number; S: Store.Saved; onBack:
   );
 }
 
+/** Neutral status line for one removed item. */
+function rowLabel(r: Stats.RemovalRec, now: number) {
+  const t = Stats.trashState(r, now);
+  if (r.mode === 'delete') return 'Deleted';
+  if (t === 'freed') return 'Trash emptied';
+  if (t === 'freed-estimate') return 'Trash likely emptied (not checked)';
+  return `In trash · empties ~${L.fmtShortDay(Math.max(now, Stats.emptiesAt(r)))}`;
+}
 function RemovedScreen(p: { S: Store.Saved; onBack: () => void; onRestored: (ids: string[]) => void }) {
+  const now = Date.now();
   const list = Object.values(p.S.removed).filter(r => !r.restored).sort((a, b) => b.at - a.at);
-  const trashed = list.filter(r => r.mode === 'trash');
+  const trashed = list.filter(r => Stats.trashState(r, now) === 'in-trash');
   const [msg, setMsg] = useState<string | null>(null);
   const restore = async (rs: Store.Removed[]) => {
     if (!native || !rs.length) return; let ok: string[] = [];
     for (const b of L.chunk(rs, BATCH)) { let allowed = false; try { allowed = await native.requestSystemAction(b.map(r => r.uri), 'restore'); } catch (e: any) { setMsg(String(e?.message || e)); break; }
-      if (!allowed) break; const back = new Set(await native.stillPresent(b.map(r => r.uri))); ok = ok.concat(b.filter(r => back.has(r.uri)).map(r => r.id)); }
+      if (!allowed) break; let st: Trash.Status[] = []; try { st = await native.mediaStatus(b.map(r => r.uri)); } catch {}
+      const back = Trash.putBack(b.map(r => r.uri), st); ok = ok.concat(b.filter(r => back.has(r.uri)).map(r => r.id)); }
     if (ok.length) p.onRestored(ok); setMsg(ok.length ? `${ok.length} put back on your phone. They’re undecided again.` : 'Nothing was put back.');
   };
   return (
@@ -557,8 +612,8 @@ function RemovedScreen(p: { S: Store.Saved; onBack: () => void; onRestored: (ids
       {msg ? <Card><Text style={T.b}>{msg}</Text></Card> : null}
       {trashed.length ? <Btn title={`Put back all ${trashed.length} from trash…`} onPress={() => restore(trashed)} /> : null}
       {list.map(r => (
-        <View key={r.id} style={st.deck}><View style={{ flex: 1 }}><Text style={T.b} numberOfLines={1}>{r.filename}</Text><Text style={T.s}>{r.mode === 'trash' ? 'In trash' : 'Deleted'} · {L.fmtBytes(r.bytes)} · {L.fmtShortDay(r.at)}</Text></View>
-          {r.mode === 'trash' ? <Pressable onPress={() => restore([r])} style={st.chip}><Text style={T.m}>Put back</Text></Pressable> : null}</View>))}
+        <View key={r.id} style={st.deck}><View style={{ flex: 1 }}><Text style={T.b} numberOfLines={1}>{r.filename}</Text><Text style={T.s}>{rowLabel(r, now)} · {L.fmtBytes(r.bytes)} · {L.fmtShortDay(r.at)}</Text></View>
+          {Stats.trashState(r, now) === 'in-trash' ? <Pressable onPress={() => restore([r])} style={st.chip}><Text style={T.m}>Put back</Text></Pressable> : null}</View>))}
     </ScrollView>
     </View>
   );

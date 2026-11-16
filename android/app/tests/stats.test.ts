@@ -21,7 +21,7 @@ t('only confirmed removals count: swipes alone (decisions/day log) add no bytes;
   assert.equal(log['2026-10-21'], undefined); assert.equal(log['2026-10-23'].bytes, 0); assert.equal(log['2026-10-23'].reviewed, 40); assert.equal(log['2026-10-23'].minutes, 5);
   assert.equal(S.summary(log, now).all.bytes, 0);
 });
-t('fully freed: deleted now, trash only after 30 days', () => {
+t('fully freed (fallback, never checked): deleted now, trash only after 30 days', () => {
   const log = S.daily([rec({ mode: 'delete', bytes: 100 }), rec({ at: at(2026, 9, 20), bytes: 200 }), rec({ at: at(2026, 10, 20), bytes: 400 })], {}, now);
   const s = S.summary(log, now); assert.equal(s.all.bytes, 700); assert.equal(s.all.freedBytes, 300);
 });
@@ -39,6 +39,6 @@ t('series: 30 daily bars ending today; 12 weekly; 12 monthly', () => {
 });
 t('csv rows', () => {
   const log = S.daily([rec({ bytes: 1234, at: at(2026, 10, 21, 8) })], { '2026-10-21': { date: '2026-10-21', activeMs: 120000, decided: 7, trashedBytes: 0, deletedBytes: 0 } }, now);
-  assert.equal(S.csv(log), 'date,bytes,photos,videos,reviewed,minutes,bytes_fully_freed\n2026-10-21,1234,1,0,7,2,0\n');
+  assert.equal(S.csv(log), 'date,bytes,photos,videos,reviewed,minutes,bytes_fully_freed,bytes_still_in_trash\n2026-10-21,1234,1,0,7,2,0,1234\n');
 });
 console.log(`\n${n} stats tests passed`);
