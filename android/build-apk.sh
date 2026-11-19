@@ -3,7 +3,7 @@
 # Usage: bash android/build-apk.sh
 # Config: repo-root config.local.json (falls back to config.example.json for checks). The signed release needs the real one, with
 # android.releaseKeystore (repo-relative path, gitignored, e.g. android/keys/<name>.keystore), android.releaseKeyAlias and
-# android.releaseKeystorePassword. From v0.0.7 the app is signed with the JC AiPPs key; the pre-0.0.7 key is no longer used.
+# android.releaseKeystorePassword. From v0.0.8 the app is signed with the JC AiPPs key (package com.jcaipps.swipeclean); the pre-0.0.8 key is no longer used.
 set -euo pipefail
 export JAVA_HOME=$HOME/jdk17 ANDROID_HOME=$HOME/android-sdk
 export PATH=$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH
