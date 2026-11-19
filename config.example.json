@@ -1,16 +1,21 @@
 {
   "neverPublishTo": [],
   "herenowPublishScript": "/ABSOLUTE/PATH/TO/here-now/scripts/publish.sh",
+  "releaseGateScript": "/ABSOLUTE/PATH/TO/release-gate.sh",
   "web": {
     "slug": "YOUR-SITE-SLUG",
     "pathToken": "YOUR_SECRET_PATH",
-    "publishSiteDir": "/ABSOLUTE/PATH/TO/EXISTING/WEB/SITE/FOLDER"
+    "publishSiteDir": "/ABSOLUTE/PATH/TO/EXISTING/WEB/SITE/FOLDER",
+    "version": "0.0.0"
   },
   "android": {
     "slug": "YOUR-SITE-SLUG",
     "installPath": "YOUR_SECRET_PATH",
     "updateChannelPath": "YOUR_UPDATE_CHANNEL_PATH",
-    "keystorePassword": "YOUR_KEYSTORE_PASSWORD",
+    "releaseKeystore": "android/keys/YOUR_RELEASE.keystore",
+    "releaseKeyAlias": "YOUR_KEY_ALIAS",
+    "releaseKeystorePassword": "YOUR_RELEASE_KEYSTORE_PASSWORD",
+    "keystorePassword": "YOUR_OLD_KEYSTORE_PASSWORD",
     "publishSiteDir": "/ABSOLUTE/PATH/TO/EXISTING/ANDROID/SITE/FOLDER"
   }
 }

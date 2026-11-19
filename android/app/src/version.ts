@@ -1,4 +1,4 @@
 // Keep in sync with app.json (expo.version / android.versionCode). build-apk.sh checks this.
-// Site / update-channel values live in config.ts (read from the gitignored config.local.json), not here.
-export const VERSION_NAME = '0.0.7';
-export const VERSION_CODE = 7;
+// The update check (src/update.ts) compares this to the public GitHub latest-release tag (vX.Y.Z).
+export const VERSION_NAME = '0.0.8';
+export const VERSION_CODE = 8;

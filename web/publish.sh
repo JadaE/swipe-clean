@@ -22,14 +22,21 @@ for f in index.html app.js config.js; do [ -f "$APP/$f" ] || die "missing app fi
 if [ "${DEMO_ONLY:-1}" = 1 ] && ! grep -q "CLIENT_ID: ''" "$APP/config.js"; then die "CLIENT_ID is set but DEMO_ONLY=1"; fi
 grep -q 'noindex' "$APP/index.html" || die "app missing noindex"
 KEYVAL="${HERENOW_API_KEY:-$(cat "$HOME/.herenow/credentials" 2>/dev/null || true)}"
+# here.now publish script: $HERENOW_PUBLISH_SH, else config key herenowPublishScript (a path; a * glob is allowed). Checked before the dry-run exit.
+PUBPAT=${HERENOW_PUBLISH_SH:-$(jq -r '.herenowPublishScript//empty' "$CFG")}
+PUB=$( [ -n "$PUBPAT" ] && ls -d $PUBPAT 2>/dev/null | head -1 || true)
+[ -n "$PUB" ] || { echo "here.now publish.sh not found (set HERENOW_PUBLISH_SH or herenowPublishScript in config.local.json)" >&2; exit 1; }
+case "$PUB" in /*) ;; *) echo "REFUSING: here.now publisher path must be absolute" >&2; exit 1;; esac
+[ "$(basename "$PUB")" = publish.sh ] && [ -f "$PUB" ] || { echo "REFUSING: here.now publisher path must point to an existing publish.sh" >&2; exit 1; }
+# release gate script: $RELEASE_GATE_SH, else config key releaseGateScript (absolute path); see the Release gate process
+G=${RELEASE_GATE_SH:-$(jq -r '.releaseGateScript//empty' "$CFG")}
+case "$G" in /*) ;; *) echo "REFUSING: release gate not configured (set RELEASE_GATE_SH or releaseGateScript to an absolute path)" >&2; exit 1;; esac
+[ -f "$G" ] || { echo "REFUSING: release gate script not found" >&2; exit 1; }
+WV=${WEB_VERSION:-$(jq -r '.web.version//empty' "$CFG")}; [ -n "$WV" ] || die "set WEB_VERSION or web.version in the config (needed for the release gate)"
 if [ "${DRY_RUN:-}" = 1 ]; then
   if [ -n "$KEYVAL" ] && grep -rqF -- "$KEYVAL" "$SITE" "$APP"; then die "API key found in site files"; fi
   echo "DRY RUN OK: would refresh <pathToken>/ inside the existing site folder and upload $(find "$SITE" -type f | wc -l) files. Nothing changed or published."; exit 0
 fi
-# here.now publish script: $HERENOW_PUBLISH_SH, else config key herenowPublishScript (a path; a * glob is allowed)
-PUBPAT=${HERENOW_PUBLISH_SH:-$(jq -r '.herenowPublishScript//empty' "$CFG")}
-PUB=$( [ -n "$PUBPAT" ] && ls -d $PUBPAT 2>/dev/null | head -1 || true)
-[ -n "$PUB" ] || { echo "here.now publish.sh not found (set HERENOW_PUBLISH_SH or herenowPublishScript in config.local.json)" >&2; exit 1; }
 [ -n "$KEYVAL" ] || { echo "No here.now API key (HERENOW_API_KEY or ~/.herenow/credentials)" >&2; exit 1; }
 # stage: refresh only the app folder (no screens/, no tests); everything else in the site folder stays as it is
 rm -rf "${SITE:?}/$TOK"; mkdir -p "$SITE/$TOK"
@@ -37,6 +44,7 @@ cp "$APP/index.html" "$APP/app.js" "$APP/config.js" "$SITE/$TOK/"; cp -r "$APP/d
 grep -q 'noindex' "$SITE/$TOK/index.html" || die "staged app missing noindex"
 if grep -rqF -- "$KEYVAL" "$SITE"; then die "API key found in site files"; fi
 if grep -rqiE 'HERENOW_API_KEY|api[_-]?key|claim_?token|hnk_' "$SITE"; then die "credential-looking text in site files"; fi
+bash "$G" swipe-clean-web "$WV" "$SITE" || { echo "Release gate did not pass; NOT publishing. Tell Review & Release." >&2; exit 1; }  # release gate (Review & Release); do not remove or bypass
 cd "$STATE"
 OUT=$(bash "$PUB" "$SITE" --client cursor --slug "$SLUG" 2>&1) || { echo "$OUT" | grep -viE 'bearer|api_key|claim' >&2; echo "PUBLISH FAILED" >&2; exit 1; }
 echo "$OUT" | grep -iE 'publish_result\.(persistence|auth_mode)|warn|error' || true
