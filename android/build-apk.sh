@@ -59,8 +59,8 @@ else
 fi
 case "$SC_KEYPASS" in YOUR*|"") echo "keystore password missing in config.local.json" >&2; exit 1;; esac
 case "$SC_KEYALIAS" in YOUR*|"") echo "key alias missing in config.local.json" >&2; exit 1;; esac
-G2=$(grep -E "applicationId|namespace" android/app/build.gradle | tr -d ' ' | sort -u | tr '\n' ' ')
-case "$G2" in *"\"${SC_PACKAGE:-com.jcaipps.swipeclean}\""*) ;; *) echo "native project package doesn't match flavor $FLAVOR (build this flavor in its own folder): $G2" >&2; exit 1;; esac
+PKG=${SC_PACKAGE:-com.jcaipps.swipeclean}
+grep -qE "applicationId ['\"]${PKG//./\\.}['\"]" android/app/build.gradle || { echo "native project package doesn't match flavor $FLAVOR ($PKG); build each flavor in its own folder" >&2; exit 1; }
 cd android
 sed -i -E "s/versionCode [0-9]+$/versionCode ${AJ##*:}/; s/versionName \"[^\"]+\"/versionName \"$V\"/" app/build.gradle
 ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=768m" --max-workers=3 -Pkotlin.compiler.execution.strategy=in-process --no-daemon
