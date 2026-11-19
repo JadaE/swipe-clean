@@ -31,4 +31,15 @@ t('drafts, prereleases, bad tags and junk give no update', () => {
   for (const j of [null, undefined, {}, 'x', rel({ draft: true }), rel({ prerelease: true }), rel({ tag_name: 'nightly' })]) assert.equal(R.parseRelease(j), null);
 });
 t('the current version is a valid x.y.z', () => { assert.ok(R.parseVersion(VERSION_NAME)); });
+t('personal build: private version file must link to the same site', () => {
+  const site = 'https://example-site.here.now/';
+  const ok = R.parseChannelFile({ versionCode: 9, versionName: '0.0.9', apkUrl: site + 'x/SwipeClean-v0.0.9.apk', notes: 'n' }, site)!;
+  assert.equal(ok.versionName, '0.0.9');
+  for (const j of [null, {}, { versionCode: 9, versionName: '0.0.9', apkUrl: 'https://evil.example/x.apk' }, { versionCode: '9', versionName: '0.0.9', apkUrl: site + 'a.apk' }, { versionCode: 9, versionName: 'x', apkUrl: site + 'a.apk' }])
+    assert.equal(R.parseChannelFile(j, site), null);
+});
+t('store build compiles in no private update channel', () => {
+  const g = JSON.parse(require('node:fs').readFileSync(__dirname + '/../src/channel.generated.json', 'utf8'));
+  if (process.env.SC_FLAVOR !== 'personal') assert.deepEqual(g, {});
+});
 console.log(`update: ${n} passed`);

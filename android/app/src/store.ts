@@ -5,13 +5,14 @@ import type { StorageSnap, RemovalRec } from './stats';
 import { Settings, DEFAULT_SETTINGS, migrateSettings } from './settings';
 export { DEFAULT_SETTINGS, migrateSettings }; export type { Settings };
 
+// decidedAt (v0.0.9): when each current decision was made, so a data import can tell which choice is newer.
 // Same shape as stats.RemovalRec (trash-check fields are optional, so records from older versions load as they are).
 export type Removed = RemovalRec & { filename: string | null };
-export type Saved = { decisions: Record<string, Decision>; history: HistEntry[]; front: string[]; days: Record<string, DayLog>; removed: Record<string, Removed>; settings: Settings; storageLog: StorageSnap[]; statsSince?: number };
+export type Saved = { decisions: Record<string, Decision>; decidedAt?: Record<string, number>; history: HistEntry[]; front: string[]; days: Record<string, DayLog>; removed: Record<string, Removed>; settings: Settings; storageLog: StorageSnap[]; statsSince?: number };
 const KEY = 'swipeclean:v1';
 export async function load(): Promise<Saved> {
   let s: any = null; try { s = JSON.parse((await AsyncStorage.getItem(KEY)) || 'null'); } catch {}
-  return { decisions: s?.decisions || {}, history: s?.history || [], front: s?.front || [], days: s?.days || {}, removed: s?.removed || {}, storageLog: s?.storageLog || [], statsSince: s?.statsSince, settings: migrateSettings(s?.settings) };
+  return { decisions: s?.decisions || {}, decidedAt: s?.decidedAt || {}, history: s?.history || [], front: s?.front || [], days: s?.days || {}, removed: s?.removed || {}, storageLog: s?.storageLog || [], statsSince: s?.statsSince, settings: migrateSettings(s?.settings) };
 }
 // Saved after EVERY swipe. Writes are serialised: if one is in flight, the newest state is written right after it.
 // History is capped at 5,000 steps on disk (unlimited while the app is open).
