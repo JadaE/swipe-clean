@@ -38,6 +38,7 @@ logs/
 # per-project config and generated files (never commit)
 config.local.json
 config.generated.json
+channel.generated.json
 android/app/android/
 android/keys/
 android/dist/

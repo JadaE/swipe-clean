@@ -25,3 +25,9 @@ export function parseRelease(j: any): UpdateInfo | null {
   const page = okLink(j.html_url, `${RELEASES_PAGE}/`) ? j.html_url : RELEASES_PAGE;
   return { versionName: v.join('.'), apkUrl: apk ? apk.browser_download_url : page, notes: String(j.body || '').slice(0, 400) };
 }
+/** Personal build: the private site's version.json ({versionCode, versionName, apkUrl, notes}); the APK link must be on that site. */
+export function parseChannelFile(j: any, site: string): UpdateInfo | null {
+  if (!j || !Number.isInteger(j.versionCode) || typeof j.apkUrl !== 'string' || !j.apkUrl.startsWith(site)) return null;
+  const v = parseVersion(j.versionName); if (!v) return null;
+  return { versionName: v.join('.'), apkUrl: j.apkUrl, notes: String(j.notes || '').slice(0, 400) };
+}

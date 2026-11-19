@@ -4,8 +4,9 @@
   "main": "index.ts",
   "private": true,
   "scripts": {
-    "typecheck": "tsc --noEmit -p .",
-    "test": "tsx tests/logic.test.ts && tsx tests/stats.test.ts && TZ=Pacific/Auckland tsx tests/stats.test.ts && tsx tests/trash.test.ts && TZ=Pacific/Auckland tsx tests/trash.test.ts && tsx tests/mascot.test.ts && tsx tests/theme.test.ts && tsx tests/update.test.ts"
+    "gen-channel": "bash ../tools/gen-channel.sh",
+    "typecheck": "npm run gen-channel --silent && tsc --noEmit -p .",
+    "test": "npm run gen-channel --silent && tsx tests/logic.test.ts && tsx tests/stats.test.ts && TZ=Pacific/Auckland tsx tests/stats.test.ts && tsx tests/trash.test.ts && TZ=Pacific/Auckland tsx tests/trash.test.ts && tsx tests/mascot.test.ts && tsx tests/theme.test.ts && tsx tests/update.test.ts && tsx tests/transfer.test.ts"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
