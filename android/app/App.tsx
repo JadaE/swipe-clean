@@ -234,7 +234,7 @@ function Welcome({ onDone }: { onDone: () => void }) {
       <Text style={[T.h1, { marginTop: 12 }]}>Swipe Clean</Text>
       <Text style={[T.b, { color: C.mut, marginVertical: 8 }]}>Go through your phone’s photos and videos at your own pace. Swipe right to keep, left to put it on your Remove pile. You decide every single one. The app never picks for you.</Text>
       <BackupNotice />
-      <Card><Text style={T.b}>Nothing leaves your phone unless you tap ⇪ Share and pick an app yourself. The only time it goes online is to check for app updates.</Text></Card>
+      <Card><Text style={T.b}>Nothing leaves your phone unless you tap ⇪ Share and pick an app yourself. The only time it goes online is to check GitHub for app updates.</Text></Card>
       <Btn kind="pri" title="I understand. Continue" onPress={onDone} testID="welcome-continue" />
     </ScrollView>
   );
@@ -657,7 +657,7 @@ function SettingsScreen(p: { S: Store.Saved; update: UpdateInfo | null; setUpdat
       <Card><Text style={T.b}>“Recent” caution</Text><Text style={T.s}>Shows a note on items newer than this, since Google Photos may not have backed them up yet. It’s only a date check. The app can’t see backup status.</Text>
         <View style={[st.row, { flexWrap: 'wrap', marginTop: 6 }]}>{[0, 7, 14, 30, 60].map(v => <Opt key={v} v={v} cur={s.cautionDays} on={v => set({ cautionDays: v })} label={v ? v + ' days' : 'Off'} />)}</View></Card>
       <Card><Text style={T.b}>App version {VERSION_NAME}</Text>
-        <Btn title={checking ? 'Checking…' : 'Check for updates'} disabled={checking} onPress={async () => { setChecking(true); try { const u = await fetchLatest(); if (isNewer(u)) { p.setUpdate(u); p.say('Version ' + u!.versionName + ' is available.'); } else p.say('You have the latest version.'); } catch { p.say('Couldn’t reach the update page.'); } setChecking(false); }} />
+        <Btn title={checking ? 'Checking…' : 'Check for updates'} disabled={checking} onPress={async () => { setChecking(true); try { const u = await fetchLatest(true); if (isNewer(u)) { p.setUpdate(u); p.say('Version ' + u!.versionName + ' is available.'); } else p.say('You have the latest version.'); } catch { p.say('Couldn’t check right now. Are you online?'); } setChecking(false); }} />
         {p.update ? <Btn kind="pri" title={'Download ' + p.update.versionName} onPress={() => openDownload(p.update!)} /> : null}</Card>
       <Btn kind="danger" title="Clear my data on this phone" onPress={() => Alert.alert('Clear your data?', 'This forgets your keep/remove choices, pile, history and stats. Your photos and videos are not touched.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear', style: 'destructive', onPress: p.onClear }])} />
     </ScrollView>
@@ -671,10 +671,11 @@ function About({ S, onBack }: { S: Store.Saved; onBack: () => void }) {
     <Heading title="About & privacy" />
     <ScrollView contentContainerStyle={[st.pad, { paddingTop: 0 }]}>
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>You decide everything.</Text> Every photo and video starts undecided. The app never suggests, flags or pre-selects anything. Decks are just different ways to sort and group.</Text></Card>
-      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Nothing leaves your phone.</Text> Photos and videos are read from the phone itself and never uploaded. ⇪ Share opens Android’s share sheet for one item, and it goes only where you send it. The only internet use is a once-a-day check of a small version file on the app’s own download page, to tell you when there’s an update.</Text></Card>
+      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Nothing leaves your phone.</Text> Photos and videos are read from the phone itself and never uploaded. ⇪ Share opens Android’s share sheet for one item, and it goes only where you send it. The only internet use is a once-a-day check of the app’s public release page on GitHub, to tell you when there’s an update. It sends nothing about you or your photos, and needs no account.</Text></Card>
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Removing is always your call.</Text> The app can only ask Android to remove items. Android shows its own confirmation, and nothing happens unless you tap Allow. “Move to trash” can be undone for about 30 days.</Text></Card>
       <BackupNotice />
-      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>What’s saved:</Text> your keep/remove choices, the pile, removal history and daily stats, only on this phone. “Clear my data” in Settings erases them.</Text></Card>
+      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Swipe Clean v{VERSION_NAME}</Text> by JC AiPPs. Updates come from the app’s public GitHub releases.</Text></Card>
+      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>What’s saved:</Text> your keep/remove choices, the pile, removal history and daily stats, only on this phone. “Clear my data” in Settings erases them, and so does uninstalling the app.</Text></Card>
     </ScrollView>
     </View>
   );
