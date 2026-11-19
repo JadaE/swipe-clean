@@ -16,6 +16,9 @@
     "releaseKeyAlias": "YOUR_KEY_ALIAS",
     "releaseKeystorePassword": "YOUR_RELEASE_KEYSTORE_PASSWORD",
     "keystorePassword": "YOUR_OLD_KEYSTORE_PASSWORD",
+    "personalPackage": "com.example.yourapp",
+    "personalKeystore": "android/keys/YOUR_OLD.keystore",
+    "personalKeyAlias": "YOUR_OLD_KEY_ALIAS",
     "publishSiteDir": "/ABSOLUTE/PATH/TO/EXISTING/ANDROID/SITE/FOLDER"
   }
 }

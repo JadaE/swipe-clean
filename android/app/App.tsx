@@ -18,9 +18,11 @@ import { fetchLatest, isNewer, openDownload, UpdateInfo } from './src/update';
 import { setReminder } from './src/reminder';
 import { VERSION_NAME } from './src/version';
 import { Mascot } from './src/Mascot';
+import * as Transfer from './src/transfer';
+import { UPDATE_SOURCE_LABEL, UPDATE_CHECK_SHORT, UPDATE_CHECK_LONG } from './src/channel';
 import { mascotBus } from './src/mascot';
 
-type Screen = { name: 'welcome' } | { name: 'access' } | { name: 'home' } | { name: 'swipe'; deck: L.Deck } | { name: 'months' } | { name: 'compare' } | { name: 'pile' } | { name: 'removed' } | { name: 'settings' } | { name: 'about' } | { name: 'stats' };
+type Screen = { name: 'welcome' } | { name: 'access' } | { name: 'home' } | { name: 'swipe'; deck: L.Deck } | { name: 'months' } | { name: 'compare' } | { name: 'pile' } | { name: 'removed' } | { name: 'settings' } | { name: 'about' } | { name: 'stats' } | { name: 'transfer' };
 const BATCH = 250;
 
 export default function App() {
@@ -121,13 +123,13 @@ function Main() {
     commit(s => { const r = L.applyDecision(s.decisions, s.history, id, d); const days = L.logDecision(s.days);
       const before = s.days[L.dayKey(Date.now())]?.activeMs || 0, after = days[L.dayKey(Date.now())].activeMs, goal = s.settings.goalMin * 60000;
       if (before < goal && after >= goal) setTimeout(() => say(`${s.settings.goalMin} minutes today. That’s your daily goal.`, 3500), 0);
-      return { ...s, ...r, days, front: s.front.filter(x => x !== id) }; });
+      return { ...s, ...r, decidedAt: stamp(s.decidedAt, id, d), days, front: s.front.filter(x => x !== id) }; });
     try { Vibration.vibrate(d === 'remove' ? 10 : 5); } catch {}
   };
   const undo = () => {
     const r = L.undoLast(S.decisions, S.history); if (!r) { say('Nothing to undo'); return; }
     mascotBus.react('undo');
-    commit(s => ({ ...s, decisions: r.decisions, history: r.history, front: r.entry.prev ? s.front : [r.entry.id, ...s.front.filter(x => x !== r.entry.id)] }));
+    commit(s => ({ ...s, decisions: r.decisions, history: r.history, decidedAt: stamp(s.decidedAt, r.entry.id, r.entry.prev), front: r.entry.prev ? s.front : [r.entry.id, ...s.front.filter(x => x !== r.entry.id)] }));
     const m = byId.get(r.entry.id); say('Undone' + (m?.filename ? ': ' + m.filename : ''));
   };
 
@@ -137,7 +139,7 @@ function Main() {
       case 'access': return <AccessScreen onAsk={async () => { const a = await requestAccess(); setAccess(a); if (a !== 'denied') { setScreen({ name: 'home' }); loadMedia(); } else say('No access yet. You can allow it in Settings → Apps → Swipe Clean → Permissions.', 4500); }} />;
       case 'swipe': return <SwipeScreen deck={screen.deck} S={S} onSound={on => commit(x => ({ ...x, settings: { ...x.settings, soundOn: on } }))} byId={byId} today={today} onDecide={decide} onUndo={undo} onBack={() => setScreen({ name: 'home' })} onPile={() => setScreen({ name: 'pile' })} pileCount={pile.length} />;
       case 'pile': return <PileScreen pile={pile} bytes={pileBytes} S={S} onBack={() => setScreen({ name: 'home' })} onUndo={undo}
-        onKeep={id => { commit(s => ({ ...s, ...L.applyDecision(s.decisions, s.history, id, 'keep') })); say('Moved back to Keep (undo is available)'); }}
+        onKeep={id => { commit(s => ({ ...s, ...L.applyDecision(s.decisions, s.history, id, 'keep'), decidedAt: stamp(s.decidedAt, id, 'keep') })); say('Moved back to Keep (undo is available)'); }}
         onRemoved={(list, mode, st) => { commit(s => { const removed = { ...s.removed }; let days = s.days; let bytes = 0; const now = Date.now(); const by = new Map(st.map(x => [x.uri, x]));
           for (const m of list) { const x = by.get(m.uri);
             removed[m.id] = { id: m.id, uri: m.uri, filename: m.filename, bytes: m.size, at: now, mode, kind: m.type === 'VIDEO' ? 'video' : 'photo',
@@ -147,8 +149,9 @@ function Main() {
         onSnaps={snaps => commit(s => ({ ...s, storageLog: s.storageLog.concat(snaps).slice(-400) }))} />;
       case 'removed': return <RemovedScreen S={S} onBack={() => setScreen({ name: 'home' })} onRestored={ids => { commit(s => { const removed = { ...s.removed }; const decisions = { ...s.decisions };
           for (const id of ids) { removed[id] = { ...removed[id], restored: true }; delete decisions[id]; } return { ...s, removed, decisions }; }); loadMedia(); }} />;
-      case 'settings': return <SettingsScreen S={S} update={update} setUpdate={setUpdate} onBack={() => setScreen({ name: 'home' })} commit={commit} say={say}
+      case 'settings': return <SettingsScreen S={S} onTransfer={() => setScreen({ name: 'transfer' })} update={update} setUpdate={setUpdate} onBack={() => setScreen({ name: 'home' })} commit={commit} say={say}
         onClear={async () => { await Store.clearAll(); const s = await Store.load(); setSaved({ ...s, settings: { ...s.settings, seenWelcome: true } }); setScreen({ name: 'home' }); say('Cleared. Nothing is saved on this phone now.'); }} />;
+      case 'transfer': return <TransferScreen S={S} commit={commit} say={say} onBack={() => setScreen({ name: 'settings' })} />;
       case 'about': return <About S={S} onBack={() => setScreen({ name: 'home' })} />;
       case 'stats': return <StatsScreen S={S} storage={storage} say={say} untracked={untracked} onOpen={checkTrash} onBack={() => setScreen({ name: 'home' })} />;
       case 'months': return <MonthsScreen live={live} S={S} commit={commit} go={setScreen} onBack={() => setScreen({ name: 'home' })} />;
@@ -234,7 +237,7 @@ function Welcome({ onDone }: { onDone: () => void }) {
       <Text style={[T.h1, { marginTop: 12 }]}>Swipe Clean</Text>
       <Text style={[T.b, { color: C.mut, marginVertical: 8 }]}>Go through your phone’s photos and videos at your own pace. Swipe right to keep, left to put it on your Remove pile. You decide every single one. The app never picks for you.</Text>
       <BackupNotice />
-      <Card><Text style={T.b}>Nothing leaves your phone unless you tap ⇪ Share and pick an app yourself. The only time it goes online is to check GitHub for app updates.</Text></Card>
+      <Card><Text style={T.b}>Nothing leaves your phone unless you tap ⇪ Share and pick an app yourself. The only time it goes online is {UPDATE_CHECK_SHORT}.</Text></Card>
       <Btn kind="pri" title="I understand. Continue" onPress={onDone} testID="welcome-continue" />
     </ScrollView>
   );
@@ -619,7 +622,61 @@ function RemovedScreen(p: { S: Store.Saved; onBack: () => void; onRestored: (ids
   );
 }
 
-function SettingsScreen(p: { S: Store.Saved; update: UpdateInfo | null; setUpdate: (u: UpdateInfo | null) => void; onBack: () => void; commit: (f: (s: Store.Saved) => Store.Saved) => void; say: (m: string) => void; onClear: () => void }) {
+/** decidedAt bookkeeping: when the current decision for an item was made (removed when it's undecided again). */
+function stamp(m: Record<string, number> | undefined, id: string, d: L.Decision | null, now = Date.now()) {
+  const o = { ...(m || {}) }; if (d) o[id] = now; else delete o[id]; return o;
+}
+/** Export / import of app data as one local JSON file through Android's own file picker. Never touches photos. */
+function TransferScreen(p: { S: Store.Saved; commit: (f: (s: Store.Saved) => Store.Saved) => void; say: (m: string, ms?: number) => void; onBack: () => void }) {
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ file: Transfer.ExportFile; summary: Transfer.ImportSummary } | null>(null);
+  const counts = useMemo(() => { const v = Object.values(p.S.decisions); return { n: v.length, days: Object.keys(p.S.days).length, removed: Object.keys(p.S.removed).length }; }, [p.S]);
+  const doExport = async () => {
+    if (!native) return; setBusy(true); setMsg(null);
+    try { const name = Transfer.exportName(L.dayKey(Date.now())); const u = await native.saveDocument(name, Transfer.exportText(p.S, VERSION_NAME));
+      setMsg(u ? `Saved ${name}. Open Swipe Clean on the other copy and choose Import.` : 'Export cancelled. Nothing was saved.'); }
+    catch (e: any) { setMsg('Couldn’t save the file: ' + (e?.message || e)); }
+    setBusy(false);
+  };
+  const doPick = async () => {
+    if (!native) return; setBusy(true); setMsg(null); setPending(null);
+    try { const text = await native.openDocument(Transfer.MAX_IMPORT_BYTES);
+      if (text === null) setMsg('Import cancelled. Nothing changed.');
+      else { const r = Transfer.parseImport(text); if (!r.ok) setMsg('That file can’t be imported: ' + r.error + '. Nothing changed.');
+        else setPending({ file: r.file, summary: Transfer.mergeImport(p.S, r.file).summary }); } }
+    catch (e: any) { setMsg(e?.code === 'TOO_BIG' ? 'That file is too big to be a Swipe Clean export. Nothing changed.' : 'Couldn’t read the file. Nothing changed.'); }
+    setBusy(false);
+  };
+  const apply = () => { if (!pending) return; const f = pending.file;
+    p.commit(s => ({ ...s, ...Transfer.mergeImport(s, f).data })); setPending(null); setMsg('Imported. Your choices and stats from the file are added to this phone.'); };
+  const sm = pending?.summary;
+  return (
+    <View style={{ flex: 1 }}>
+    <TopBar S={p.S} left={<><Back onPress={p.onBack} /><Stat label="Choices" value={String(counts.n)} /></>} />
+    <Heading title="Move your data" sub="One file on this phone. No account, no internet." />
+    <ScrollView contentContainerStyle={[st.pad, { paddingTop: 0 }]}>
+      {msg ? <Card><Text style={T.b} testID="transfer-msg">{msg}</Text></Card> : null}
+      {sm ? <Card><Text style={[T.b, { fontWeight: '700' }]}>Import this file?</Text>
+        <Text style={T.b}>From Swipe Clean v{sm.appVersion}, saved {L.fmtDay(sm.exportedAt)}</Text>
+        <Text style={T.s}>{sm.decisions} choices ({sm.keep} keep · {sm.remove} remove · {sm.later} decide later)</Text>
+        <Text style={T.s}>{sm.newDecisions} new here{sm.changedDecisions ? ` · ${sm.changedDecisions} updated where the file’s choice is newer` : ''}</Text>
+        <Text style={T.s}>{sm.days} days of stats · {sm.removed} removal records ({sm.newRemoved} new here)</Text>
+        <Text style={[T.s, { marginTop: 6 }]}>This adds to what’s already here. Days you used both apps keep the larger numbers, so importing the same file again won’t count anything twice. Photos and videos aren’t touched.</Text>
+        <Btn kind="pri" title="Import" onPress={apply} testID="transfer-apply" />
+        <Btn kind="ghost" title="Cancel" onPress={() => { setPending(null); setMsg('Import cancelled. Nothing changed.'); }} /></Card> : null}
+      <Card><Text style={T.b}>Export</Text>
+        <Text style={T.s}>Saves your {counts.n} choices, {counts.days} days of stats, {counts.removed} removal records and settings as one file, wherever you pick (for example Downloads). Nothing is uploaded.</Text>
+        <Btn title={busy ? 'Working…' : 'Export to a file…'} disabled={busy} onPress={doExport} testID="transfer-export" /></Card>
+      <Card><Text style={T.b}>Import</Text>
+        <Text style={T.s}>Pick a file exported by Swipe Clean. You’ll see what’s in it before anything changes.</Text>
+        <Btn kind="ghost" title={busy ? 'Working…' : 'Choose a file…'} disabled={busy} onPress={doPick} testID="transfer-import" /></Card>
+      <Text style={[T.s, { marginVertical: 8 }]}>The file holds your choices and stats, not photos. Keep it somewhere private.</Text>
+    </ScrollView>
+    </View>
+  );
+}
+
+function SettingsScreen(p: { S: Store.Saved; onTransfer: () => void; update: UpdateInfo | null; setUpdate: (u: UpdateInfo | null) => void; onBack: () => void; commit: (f: (s: Store.Saved) => Store.Saved) => void; say: (m: string) => void; onClear: () => void }) {
   const s = p.S.settings; const set = (patch: Partial<Store.Settings>) => p.commit(x => ({ ...x, settings: { ...x.settings, ...patch } }));
   const [checking, setChecking] = useState(false);
   const applyReminder = async (on: boolean, h = s.remHour, m = s.remMin, g = s.goalMin) => {
@@ -659,6 +716,9 @@ function SettingsScreen(p: { S: Store.Saved; update: UpdateInfo | null; setUpdat
       <Card><Text style={T.b}>App version {VERSION_NAME}</Text>
         <Btn title={checking ? 'Checking…' : 'Check for updates'} disabled={checking} onPress={async () => { setChecking(true); try { const u = await fetchLatest(true); if (isNewer(u)) { p.setUpdate(u); p.say('Version ' + u!.versionName + ' is available.'); } else p.say('You have the latest version.'); } catch { p.say('Couldn’t check right now. Are you online?'); } setChecking(false); }} />
         {p.update ? <Btn kind="pri" title={'Download ' + p.update.versionName} onPress={() => openDownload(p.update!)} /> : null}</Card>
+      <Card><Text style={T.b}>Move your data</Text>
+        <Text style={T.s}>Save your choices and stats to a file, or add them from a file saved by another copy of Swipe Clean. Only app data, never photos.</Text>
+        <Btn title="Export or import…" onPress={p.onTransfer} testID="open-transfer" /></Card>
       <Btn kind="danger" title="Clear my data on this phone" onPress={() => Alert.alert('Clear your data?', 'This forgets your keep/remove choices, pile, history and stats. Your photos and videos are not touched.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear', style: 'destructive', onPress: p.onClear }])} />
     </ScrollView>
     </View>
@@ -671,10 +731,10 @@ function About({ S, onBack }: { S: Store.Saved; onBack: () => void }) {
     <Heading title="About & privacy" />
     <ScrollView contentContainerStyle={[st.pad, { paddingTop: 0 }]}>
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>You decide everything.</Text> Every photo and video starts undecided. The app never suggests, flags or pre-selects anything. Decks are just different ways to sort and group.</Text></Card>
-      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Nothing leaves your phone.</Text> Photos and videos are read from the phone itself and never uploaded. ⇪ Share opens Android’s share sheet for one item, and it goes only where you send it. The only internet use is a once-a-day check of the app’s public release page on GitHub, to tell you when there’s an update. It sends nothing about you or your photos, and needs no account.</Text></Card>
+      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Nothing leaves your phone.</Text> Photos and videos are read from the phone itself and never uploaded. ⇪ Share opens Android’s share sheet for one item, and it goes only where you send it. The only internet use is {UPDATE_CHECK_LONG}, to tell you when there’s an update. It sends nothing about you or your photos, and needs no account.</Text></Card>
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Removing is always your call.</Text> The app can only ask Android to remove items. Android shows its own confirmation, and nothing happens unless you tap Allow. “Move to trash” can be undone for about 30 days.</Text></Card>
       <BackupNotice />
-      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Swipe Clean v{VERSION_NAME}</Text> by JC AiPPs. Updates come from the app’s public GitHub releases.</Text></Card>
+      <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>Swipe Clean v{VERSION_NAME}</Text> by JC AiPPs. {UPDATE_SOURCE_LABEL}</Text></Card>
       <Card><Text style={T.b}><Text style={{ fontWeight: '700' }}>What’s saved:</Text> your keep/remove choices, the pile, removal history and daily stats, only on this phone. “Clear my data” in Settings erases them, and so does uninstalling the app.</Text></Card>
     </ScrollView>
     </View>

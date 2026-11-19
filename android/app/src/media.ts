@@ -15,6 +15,8 @@ export const native = Native as null | {
   requestSystemAction(uris: string[], mode: 'trash' | 'delete' | 'restore'): Promise<boolean>;
   share(uri: string, mime: string | null): Promise<boolean>;
   exportCsv(name: string, content: string, share: boolean): Promise<string>;
+  saveDocument(name: string, content: string): Promise<string>;      // Android "save as" picker; "" = cancelled
+  openDocument(maxBytes: number): Promise<string | null>;            // Android file picker, read-only; null = cancelled
 };
 export type Access = 'full' | 'partial' | 'denied';
 const P = {

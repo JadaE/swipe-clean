@@ -30,6 +30,12 @@ import java.io.FileOutputStream
 class SwipeCleanMediaModule : Module() {
   private var pending: Promise? = null
   private val REQ = 0x5C1E
+  // Data export / import through Android's own file picker (Storage Access Framework). No storage permission needed:
+  // the app can only write the one file she names, or read the one file she picks.
+  private var pendingSave: Promise? = null; private var saveText: String? = null
+  private var pendingOpen: Promise? = null; private var openMax: Int = 0
+  private val REQ_SAVE = 0x5C1F
+  private val REQ_OPEN = 0x5C20
 
   private val cr get() = requireNotNull(appContext.reactContext).contentResolver
   private val cacheDir get() = File(requireNotNull(appContext.reactContext).cacheDir, "sc-thumbs").apply { mkdirs() }
@@ -249,10 +255,55 @@ class SwipeCleanMediaModule : Module() {
       saved?.toString() ?: ""
     }.runOnQueue(Queues.MAIN)
 
+    /** Opens Android's "save as" picker for ONE JSON file named [name]; writes [content] there. Resolves the chosen
+     *  content:// URI, or "" if she cancels. Nothing is shared or uploaded. */
+    AsyncFunction("saveDocument") { name: String, content: String, promise: Promise ->
+      if (pendingSave != null || pendingOpen != null) { promise.reject("BUSY", "A file picker is already open.", null); return@AsyncFunction }
+      val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"; putExtra(Intent.EXTRA_TITLE, name) }
+      pendingSave = promise; saveText = content
+      try { appContext.throwingActivity.startActivityForResult(i, REQ_SAVE) }
+      catch (e: Exception) { pendingSave = null; saveText = null; promise.reject("LAUNCH", e.message ?: "Could not open the file picker", e) }
+    }.runOnQueue(Queues.MAIN)
+
+    /** Opens Android's file picker for ONE file and reads it as UTF-8 text. Refuses files over [maxBytes].
+     *  Resolves the text, or null if she cancels. Read-only: the picked file is never changed. */
+    AsyncFunction("openDocument") { maxBytes: Int, promise: Promise ->
+      if (pendingSave != null || pendingOpen != null) { promise.reject("BUSY", "A file picker is already open.", null); return@AsyncFunction }
+      val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/plain", "application/octet-stream"))
+      }
+      pendingOpen = promise; openMax = maxBytes
+      try { appContext.throwingActivity.startActivityForResult(i, REQ_OPEN) }
+      catch (e: Exception) { pendingOpen = null; promise.reject("LAUNCH", e.message ?: "Could not open the file picker", e) }
+    }.runOnQueue(Queues.MAIN)
+
     OnActivityResult { _, payload ->
-      if (payload.requestCode == REQ) {
-        val p = pending; pending = null
-        p?.resolve(payload.resultCode == Activity.RESULT_OK)
+      when (payload.requestCode) {
+        REQ -> { val p = pending; pending = null; p?.resolve(payload.resultCode == Activity.RESULT_OK) }
+        REQ_SAVE -> {
+          val p = pendingSave; val text = saveText; pendingSave = null; saveText = null
+          val uri = payload.data?.data
+          if (p == null) return@OnActivityResult
+          if (payload.resultCode != Activity.RESULT_OK || uri == null || text == null) { p.resolve(""); return@OnActivityResult }
+          try { requireNotNull(cr.openOutputStream(uri, "wt")) { "Couldn't open the file" }.use { it.write(text.toByteArray(Charsets.UTF_8)) }; p.resolve(uri.toString()) }
+          catch (e: Exception) { p.reject("WRITE", "Couldn't save the file", e) }
+        }
+        REQ_OPEN -> {
+          val p = pendingOpen; val max = openMax; pendingOpen = null
+          val uri = payload.data?.data
+          if (p == null) return@OnActivityResult
+          if (payload.resultCode != Activity.RESULT_OK || uri == null) { p.resolve(null); return@OnActivityResult }
+          try {
+            val bytes = requireNotNull(cr.openInputStream(uri)) { "Couldn't open the file" }.use { inp ->
+              val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(64 * 1024); var total = 0
+              while (true) { val n = inp.read(buf); if (n < 0) break; total += n; if (total > max) throw IllegalStateException("TOO_BIG"); out.write(buf, 0, n) }
+              out.toByteArray()
+            }
+            p.resolve(String(bytes, Charsets.UTF_8))
+          } catch (e: IllegalStateException) { p.reject("TOO_BIG", "That file is too big to be a Swipe Clean export.", null) }
+          catch (e: Exception) { p.reject("READ", "Couldn't read the file", e) }
+        }
       }
     }
   }
