@@ -39,6 +39,7 @@ logs/
 config.local.json
 config.generated.json
 channel.generated.json
+android/app/src/channel.ts
 android/app/android/
 android/keys/
 android/dist/
